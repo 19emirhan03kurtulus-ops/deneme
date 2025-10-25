@@ -602,9 +602,15 @@ with tab_decrypt:
                         st.error("Yüklenen meta dosyası geçerli bir JSON formatında değil.")
                 else:
                     try:
-                        # Kullanıcının girdiği şifreyi session state'e kaydet
-                        st.session_state.decrypt_pass = dec_pass
+                        # HATA BURADAYDI! dec_pass zaten key="decrypt_pass" ile st.session_state.decrypt_pass içine otomatik olarak atanmıştır.
+                        # Tekrar atamaya çalışmak hataya neden olur.
+                        # st.session_state.decrypt_pass = dec_pass # <-- KALDIRILDI/YORUM SATIRI YAPILDI
                         
+                        # dec_pass değişkeni, zaten st.text_input tarafından güncellenen session state'ten gelir.
+                        # Ancak Streamlit'te, widget'ın value parametresine atadığımız session state değeri, 
+                        # form dışındayken bile bileşenin mevcut değerini tutar. Bu nedenle, dec_pass'ı kullanmak yerine 
+                        # doğrudan st.session_state.decrypt_pass'ı kullanacağız.
+
                         open_time_str = meta.get("open_time")
                         allow_no = bool(meta.get("allow_no_password", False))
                         stored_tag = meta.get("verify_tag")
@@ -634,8 +640,11 @@ with tab_decrypt:
                             st.warning(f"Bu dosyanın açılmasına daha var. \n\nAçılma Zamanı: **{open_time_str}**\nKalan Süre: **{days} gün, {hours} saat, {minutes} dakika**")
                         else:
                             # 2. Şifre kontrolü
-                            pw_to_use = "" if allow_no else dec_pass
-                            if not allow_no and not dec_pass:
+                            # Buradaki değeri widget'tan gelen (ve session state'te olan) değeri kullanarak alıyoruz.
+                            current_dec_pass = st.session_state.decrypt_pass 
+                            pw_to_use = "" if allow_no else current_dec_pass
+                            
+                            if not allow_no and not current_dec_pass:
                                 log("Hata: Şifre gerekli.")
                                 st.error("Bu dosya için şifre gereklidir, ancak şifre girilmedi.")
                             else:
