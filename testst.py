@@ -39,7 +39,8 @@ init_state()
 def log(text):
     """Streamlit için loglama fonksiyonu. Logları session_state'e ekler."""
     ts = datetime.datetime.now().strftime("%H:%M:%S")
-    st.session_state.log = f"[{ts}] {text}\n" + st.session_session_state.log # Yeni loglar üste gelsin
+    # Hata düzeltildi: st.session_session_state yerine st.session_state kullanıldı.
+    st.session_state.log = f"[{ts}] {text}\n" + st.session_state.log # Yeni loglar üste gelsin
 
 def normalize_time(t):
     # Streamlit'in datetime_input'u zaten datetime objesi verir, ancak meta'ya yazmak için
@@ -202,6 +203,7 @@ def decrypt_image_in_memory(enc_image_bytes, password, open_time_str, image_hash
 
 # --- Sidebar (Kenar Çubuğu) ---
 with st.sidebar:
+    # Bu satırın çalışabilmesi için loglama hatası düzeltildi.
     st.image(create_sample_image_bytes(), use_column_width=True, caption="Örnek Resim Görünümü")
     
     st.subheader("Örnek Resim")
@@ -234,10 +236,8 @@ with st.sidebar:
             """
         )
     
-    # Log kutusu (customtkinter'daki log_box'ın yerine)
+    # Log kutusu
     st.subheader("İşlem Günlüğü")
-    # Streamlit'in widget kimliği çakışmasını önlemek için, bu metin alanının sadece bir kez
-    # çizildiğinden emin oluyoruz, ki zaten yan çubukta olduğu için bu kurala uymalı.
     st.text_area("Loglar", value=st.session_state.log, height=300, disabled=True, key="log_area")
 
 
