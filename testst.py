@@ -1,6 +1,7 @@
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont 
 import hashlib, datetime, random, os, json, io
+import zipfile # ZIP dosyası oluşturmak için eklendi
 
 # ----------------------------- Ayarlar ve Başlık -----------------------------
 st.set_page_config(
@@ -111,6 +112,19 @@ def add_text_watermark(img: Image.Image, hidden_message: str) -> Image.Image:
     draw.text((x, y), full_text, font=font, fill=text_color)
     
     return img_copy
+
+def create_zip_archive(enc_bytes, meta_bytes, enc_filename, meta_filename):
+    """
+    Şifreli resmi ve meta veriyi içeren bir ZIP arşivi oluşturur ve byte dizisini döndürür.
+    """
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        # Şifreli resim dosyasını ekle
+        zf.writestr(enc_filename, enc_bytes)
+        # Meta dosyasını ekle
+        zf.writestr(meta_filename, meta_bytes)
+        
+    return zip_buffer.getvalue()
 
 # ----------------------------- Örnek Resim Oluşturma -----------------------------
 def create_sample_image_bytes():
@@ -239,11 +253,11 @@ with st.sidebar:
             2. Bir resim dosyası (`.png`, `.jpg`) yükleyin.
             3. Gerekli ayarları (şifre, zaman, gizli mesaj) yapın. **(Zaman ve Şifre dahil)**
             4. `Şifrele` butonuna basın.
-            5. Oluşturulan `.png` ve `.meta` dosyalarını indirin.
+            5. Oluşturulan `.zip` dosyasını indirin.
             
             **Şifre Çözme:**
             1. `🔓 Çöz` sekmesine gidin.
-            2. Şifrelenmiş `.png` dosyasını ve ilgili `.meta` dosyasını yükleyin.
+            2. Şifrelenmiş `.png` dosyasını ve ilgili `.meta` dosyasını yükleyin. (Önce ZIP'ten çıkarmanız gerekir)
             3. Görsel şifresini (eğer gerekliyse) girin.
             4. `Çöz` butonuna basın.
             5. Resim, **zamanı geldiyse** ve şifre doğruysa sağdaki önizlemede görünecektir.
@@ -282,7 +296,7 @@ with tab_encrypt:
         enc_secret_text = st.text_area("Gizli Mesaj (Meta veriye saklanır)", placeholder="Gizli notunuz...", key="enc_secret_text_area")
         enc_secret_key = st.text_input("Gizli Mesaj Şifresi (Filigranı görmek için)", type="password", placeholder="Filigranı açacak şifre", key="enc_secret_key_input")
         
-        # AÇILMA ZAMANI (Datetime Input) - KARARLILIK İÇİN GÜNCELLENDİ
+        # AÇILMA ZAMANI (Datetime Input)
         
         enc_time = st.datetime_input(
             "Açılma Zamanı (Bu zamandan önce açılamaz)", 
@@ -318,28 +332,27 @@ with tab_encrypt:
             
             if enc_bytes and meta_bytes:
                 log("Şifreleme tamamlandı. Dosyalar indirilmeye hazır.")
-                st.success("Şifreleme Başarılı! Lütfen her iki dosyayı da indirin.")
+                st.success("Şifreleme Başarılı! Oluşturulan ZIP dosyasını indirin.")
                 st.session_state.generated_enc_bytes = enc_bytes
                 st.session_state.generated_meta_bytes = meta_bytes
                 
                 base_name = os.path.splitext(uploaded_file.name)[0]
                 enc_filename = f"{base_name}_encrypted.png"
                 meta_filename = f"{base_name}_encrypted.meta"
+                zip_filename = f"{base_name}_encrypted_files.zip"
+
+                # Tek ZIP dosyasını oluştur ve indir
+                zip_bytes = create_zip_archive(enc_bytes, meta_bytes, enc_filename, meta_filename)
+
+                st.download_button(
+                    label="ZIP Olarak İndir (Resim ve Meta Dosyaları)",
+                    data=zip_bytes,
+                    file_name=zip_filename,
+                    mime="application/zip",
+                    key="download_zip_button",
+                    use_container_width=True
+                )
                 
-                st.download_button(
-                    label="1. Şifreli Resmi (.png) İndir",
-                    data=st.session_state.generated_enc_bytes,
-                    file_name=enc_filename,
-                    mime="image/png",
-                    key="download_enc_button"
-                )
-                st.download_button(
-                    label="2. Meta Dosyasını (.meta) İndir",
-                    data=st.session_state.generated_meta_bytes,
-                    file_name=meta_filename,
-                    mime="application/json",
-                    key="download_meta_button"
-                )
             else:
                 log("Şifreleme başarısız.")
                 st.error("Şifreleme sırasında bir hata oluştu. Logları kontrol edin.")
