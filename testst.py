@@ -602,15 +602,7 @@ with tab_decrypt:
                         st.error("Yüklenen meta dosyası geçerli bir JSON formatında değil.")
                 else:
                     try:
-                        # HATA BURADAYDI! dec_pass zaten key="decrypt_pass" ile st.session_state.decrypt_pass içine otomatik olarak atanmıştır.
-                        # Tekrar atamaya çalışmak hataya neden olur.
-                        # st.session_state.decrypt_pass = dec_pass # <-- KALDIRILDI/YORUM SATIRI YAPILDI
-                        
-                        # dec_pass değişkeni, zaten st.text_input tarafından güncellenen session state'ten gelir.
-                        # Ancak Streamlit'te, widget'ın value parametresine atadığımız session state değeri, 
-                        # form dışındayken bile bileşenin mevcut değerini tutar. Bu nedenle, dec_pass'ı kullanmak yerine 
-                        # doğrudan st.session_state.decrypt_pass'ı kullanacağız.
-
+                        # dec_pass değişkeni zaten st.session_state.decrypt_pass içindeki değeri tutar
                         open_time_str = meta.get("open_time")
                         allow_no = bool(meta.get("allow_no_password", False))
                         stored_tag = meta.get("verify_tag")
@@ -740,16 +732,18 @@ with tab_decrypt:
             st.warning("Filigranı görmek için gizli mesaj şifresini girin:")
             
             with st.form("secret_key_form"):
-                # Giriş değerini session state'ten alarak sıfırlama özelliğini destekliyoruz
+                # Widget oluşturulur. Değeri otomatik olarak st.session_state.modal_pass'a atanır.
                 entered_key = st.text_input("Gizli Mesaj Şifresi", type="password", key="modal_pass", value=st.session_state.modal_pass)
                 
                 submit_key = st.form_submit_button("Onayla")
                 
             if submit_key:
-                # Kullanıcının girdiği şifreyi session state'e kaydet
-                st.session_state.modal_pass = entered_key
+                # KRİTİK DÜZELTME: Bu satır, form butonu tıklandığında hata veriyordu çünkü 'modal_pass' key'ine sahip widget zaten değerini atamıştı.
+                # Satır kaldırıldı. Artık doğrudan st.session_state.modal_pass'ı kullanacağız.
+                # st.session_state.modal_pass = entered_key 
                 
-                entered_hash = hashlib.sha256(entered_key.encode('utf-8')).hexdigest()
+                # Değerin Hash'ini kontrol et
+                entered_hash = hashlib.sha256(st.session_state.modal_pass.encode('utf-8')).hexdigest()
                 if entered_hash == st.session_state.secret_key_hash:
                     log("Gizli mesaj şifresi doğru. Filigran gösteriliyor.")
                     st.session_state.watermarked_image = add_text_watermark(
@@ -758,7 +752,11 @@ with tab_decrypt:
                     )
                     st.session_state.is_message_visible = True
                     st.session_state.prompt_secret_key = False
-                    st.rerun()
+                    # Başarılı olduğunda yeniden yükleme (rerun) yapılması gerekir
+                    st.rerun() 
                 else:
                     log("Hata: Gizli mesaj şifresi yanlış.")
                     st.error("Gizli mesaj şifresi yanlış.")
+                    # Yanlış şifre girildiğinde input alanını temizleyebiliriz
+                    st.session_state.modal_pass = "" 
+                    st.rerun()
