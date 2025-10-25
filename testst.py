@@ -1,28 +1,48 @@
-# app_streamlit.py
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFont
-import hashlib, datetime, random, os, json, io, tempfile, base64
+from PIL import Image, ImageDraw, ImageFont 
+import hashlib, datetime, random, os, json, io
 
-# ----------------------------- Yardımcı: Session State Başlatma -----------------------------
-if "current_image_path" not in st.session_state:
-    st.session_state.current_image_path = ""
-if "current_image_bytes" not in st.session_state:
-    st.session_state.current_image_bytes = None
-if "decrypted_image" not in st.session_state:
-    st.session_state.decrypted_image = None
-if "watermarked_image" not in st.session_state:
-    st.session_state.watermarked_image = None
-if "hidden_message" not in st.session_state:
-    st.session_state.hidden_message = ""
-if "secret_key_hash" not in st.session_state:
-    st.session_state.secret_key_hash = ""
-if "log_lines" not in st.session_state:
-    st.session_state.log_lines = []
-if "progress" not in st.session_state:
-    st.session_state.progress = 0.0
+# ----------------------------- Ayarlar ve Başlık -----------------------------
+st.set_page_config(
+    page_title="Zamanlı Görsel Şifreleme",
+    page_icon="🖼️",
+    layout="wide"
+)
 
-# ----------------------------- Fonksiyonlar (Orijinal mantık korunuyor) -----------------------------
+st.title("🖼️ Zamanlı Görsel Şifreleme (Streamlit)")
+
+# ----------------------------- Session State (Oturum Durumu) -----------------------------
+# Streamlit her etkileşimde yeniden çalışır. 
+# Değişkenleri korumak için `st.session_state` kullanmak zorundayız.
+
+def init_state():
+    """Tüm oturum durumlarını başlatır."""
+    defaults = {
+        'log': "",
+        'decrypted_image': None,
+        'watermarked_image': None,
+        'hidden_message': "",
+        'secret_key_hash': "",
+        'is_message_visible': False,
+        'prompt_secret_key': False,
+        'generated_enc_bytes': None,
+        'generated_meta_bytes': None
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+init_state()
+
+# ----------------------------- Yardımcı Fonksiyonlar -----------------------------
+
+def log(text):
+    """Streamlit için loglama fonksiyonu. Logları session_state'e ekler."""
+    ts = datetime.datetime.now().strftime("%H:%M:%S")
+    st.session_state.log = f"[{ts}] {text}\n" + st.session_session_state.log # Yeni loglar üste gelsin
+
 def normalize_time(t):
+    # Streamlit'in datetime_input'u zaten datetime objesi verir, ancak meta'ya yazmak için
     return t.strftime("%Y-%m-%d %H:%M") if isinstance(t, datetime.datetime) else str(t)
 
 def hash_image_content(img: Image.Image) -> str:
@@ -32,41 +52,84 @@ def generate_key(password, open_time_str, image_hash=""):
     combo = (password or "") + open_time_str + image_hash
     return hashlib.sha256(combo.encode("utf-8")).hexdigest()
 
-def make_paths(image_path):
-    folder = os.path.dirname(image_path) or "."
-    base = os.path.splitext(os.path.basename(image_path))[0]
-    enc = os.path.join(folder, f"{base}_encrypted.png")
-    dec = os.path.join(folder, f"{base}_decrypted.png")
-    meta = os.path.join(folder, f"{base}_encrypted.meta")
-    return enc, dec, meta
-
 def create_keystream(key_hex, w, h):
     random.seed(int(key_hex, 16))
     return [random.randint(0, 255) for _ in range(w * h * 3)]
 
-def pil_from_bytes(b: bytes) -> Image.Image:
-    return Image.open(io.BytesIO(b)).convert("RGB")
+def add_text_watermark(img: Image.Image, hidden_message: str) -> Image.Image:
+    """Şifre çözülmüş görselin üzerine SADECE gizli mesajı ekler."""
+    img_copy = img.copy()
+    draw = ImageDraw.Draw(img_copy, 'RGBA')
+    w, h = img_copy.size
+    
+    if not hidden_message.strip():
+        return img 
 
-def bytes_from_pil(img: Image.Image, format="PNG") -> bytes:
-    b = io.BytesIO()
-    img.save(b, format=format)
-    return b.getvalue()
+    text_lines = [
+        "*** GİZLİ MESAJ ***",
+        f"{hidden_message}"
+    ]
+    full_text = "\n".join(text_lines)
+    
+    try:
+        # Streamlit sunucularında font bulmak zor olabilir, varsayılana güvenmek daha iyi
+        font = ImageFont.load_default().font_variant(size=24)
+    except IOError:
+        font = ImageFont.load_default()
+        
+    text_color = (255, 0, 0, 255)
+    
+    try:
+        bbox = draw.textbbox((0, 0), full_text, font=font, anchor="ls")
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+    except AttributeError:
+        # Eski PIL versiyonları için fallback
+        text_w, text_h = draw.textlength(full_text, font=font), 24 * len(text_lines)
 
-# Log helper
-def log(text):
-    ts = datetime.datetime.now().strftime("%H:%M:%S")
-    st.session_state.log_lines.append(f"[{ts}] {text}")
+    x = w - text_w - 20
+    y = h - text_h - 20
 
-def get_log_text():
-    return "\n".join(st.session_state.log_lines)
+    padding = 10
+    draw.rectangle([x - padding, y - padding, x + text_w + padding, y + text_h + padding], fill=(0, 0, 0, 150)) 
+    draw.text((x, y), full_text, font=font, fill=text_color)
+    
+    return img_copy
 
-# ----------------------------- Encrypt / Decrypt (Mantık aynı) -----------------------------
-def encrypt_image_file_from_bytes(original_bytes, password, open_time_str, secret_text, secret_key, out_enc_path, meta_path, allow_no_password, progress_callback=None):
-    img = pil_from_bytes(original_bytes)
+# ----------------------------- Örnek Resim Oluşturma -----------------------------
+def create_sample_image_bytes():
+    """Diske kaydetmek yerine hafızada (bytes) örnek resim oluşturur."""
+    img = Image.new("RGB", (600,400), color=(70,130,180))
+    for y in range(img.height):
+        for x in range(img.width):
+            img.putpixel((x,y), (70 + int(x/img.width*80), 130 + int(y/img.height*40), 180))
+    
+    # Resmi diske değil, bir byte akışına kaydet
+    img_byte_arr = io.BytesIO()
+    img.save(img_byte_arr, format='PNG')
+    img_bytes = img_byte_arr.getvalue()
+    log("Örnek resim hafızada oluşturuldu.")
+    return img_bytes
+
+# ----------------------------- Çekirdek (encrypt/decrypt) -----------------------------
+
+def encrypt_image_file(image_bytes, password, open_time_dt, secret_text, secret_key, allow_no_password, progress_bar):
+    """
+    Şifreleme işlemini yapar ve şifreli dosya ile meta verisini byte dizisi olarak döndürür.
+    """
+    try:
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception as e:
+        log(f"Hata: Resim dosyası okunamadı: {e}")
+        st.error(f"Hata: Yüklenen resim dosyası açılamadı: {e}")
+        return None, None
+
     w, h = img.size
     px = img.load()
+    
     image_hash = hash_image_content(img)
-
+    open_time_str = normalize_time(open_time_dt)
+    
     key_hex = generate_key(password, open_time_str, image_hash)
     ks = create_keystream(key_hex, w, h)
 
@@ -78,31 +141,43 @@ def encrypt_image_file_from_bytes(original_bytes, password, open_time_str, secre
             r, g, b = px[x, y]
             enc_px[x, y] = (r ^ ks[i], g ^ ks[i+1], b ^ ks[i+2])
             i += 3
-        if progress_callback and (y % 10 == 0 or y == h-1):
-            progress_callback((y + 1) / h)
-
-    enc_img.save(out_enc_path)
+        if y % 10 == 0:
+            progress_bar.progress((y + 1) / h, text="Şifreleniyor...")
+            
+    # Şifreli resmi hafızada (bytes) hazırla
+    enc_img_byte_arr = io.BytesIO()
+    enc_img.save(enc_img_byte_arr, format='PNG')
+    enc_img_bytes = enc_img_byte_arr.getvalue()
 
     verify_tag = hashlib.sha256(key_hex.encode("utf-8") + img.tobytes()).hexdigest()
     secret_key_hash = hashlib.sha256(secret_key.encode('utf-8')).hexdigest() if secret_key else ""
 
     meta = {
-        "open_time": open_time_str,
-        "allow_no_password": bool(allow_no_password),
-        "verify_tag": verify_tag,
+        "open_time": open_time_str, 
+        "allow_no_password": bool(allow_no_password), 
+        "verify_tag": verify_tag, 
         "hidden_message": secret_text,
         "image_content_hash": image_hash,
         "secret_key_hash": secret_key_hash
     }
-    with open(meta_path, "w", encoding="utf-8") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=2)
+    
+    # Meta verisini JSON string olarak hazırla ve byte'a çevir
+    meta_json_bytes = json.dumps(meta, ensure_ascii=False, indent=2).encode('utf-8')
 
-    if progress_callback:
-        progress_callback(1.0)
-    return verify_tag, out_enc_path, image_hash
+    progress_bar.progress(1.0, text="Tamamlandı!")
+    return enc_img_bytes, meta_json_bytes
 
-def decrypt_image_from_file(enc_path, password, open_time_str, image_hash, progress_callback=None):
-    img = Image.open(enc_path).convert("RGB")
+def decrypt_image_in_memory(enc_image_bytes, password, open_time_str, image_hash, progress_bar):
+    """
+    Şifreli byte dizisini çözer ve çözülmüş PIL Image objesini döndürür.
+    """
+    try:
+        img = Image.open(io.BytesIO(enc_image_bytes)).convert("RGB")
+    except Exception as e:
+        log(f"Hata: Şifreli resim dosyası okunamadı: {e}")
+        st.error(f"Hata: Yüklenen şifreli resim dosyası açılamadı: {e}")
+        return None, None
+
     w, h = img.size
     px = img.load()
 
@@ -117,329 +192,337 @@ def decrypt_image_from_file(enc_path, password, open_time_str, image_hash, progr
             r, g, b = px[x, y]
             dec_px[x, y] = (r ^ ks[i], g ^ ks[i+1], b ^ ks[i+2])
             i += 3
-        if progress_callback and (y % 10 == 0 or y == h-1):
-            progress_callback((y + 1) / h)
+        if y % 10 == 0:
+            progress_bar.progress((y + 1) / h, text="Şifre çözülüyor...")
 
-    if progress_callback:
-        progress_callback(1.0)
+    progress_bar.progress(1.0, text="Tamamlandı!")
     return dec_img, key_hex
 
-# ----------------------------- Filigran (Aynı) -----------------------------
-def add_text_watermark(img: Image.Image, hidden_message: str) -> Image.Image:
-    img_copy = img.copy()
-    draw = ImageDraw.Draw(img_copy, 'RGBA')
-    w, h = img_copy.size
+# ----------------------------- ARAYÜZ (UI) -----------------------------
 
-    if not hidden_message.strip():
-        return img
-
-    text_lines = [
-        "*** GİZLİ MESAJ ***",
-        f"{hidden_message}"
-    ]
-    full_text = "\n".join(text_lines)
-
-    try:
-        font = ImageFont.truetype("arial.ttf", 24)
-    except IOError:
-        font = ImageFont.load_default()
-
-    text_color = (255, 0, 0, 255)
-    try:
-        bbox = draw.textbbox((0, 0), full_text, font=font, anchor="ls")
-        text_w = bbox[2] - bbox[0]
-        text_h = bbox[3] - bbox[1]
-    except AttributeError:
-        text_w, text_h = draw.textsize(full_text, font=font)
-
-    x = w - text_w - 20
-    y = h - text_h - 20
-
-    padding = 10
-    draw.rectangle([x - padding, y - padding, x + text_w + padding, y + text_h + padding], fill=(0, 0, 0, 150))
-    draw.text((x, y), full_text, font=font, fill=text_color)
-
-    return img_copy
-
-# ----------------------------- UI: Sağ/Tek sayfa düzeni -----------------------------
-st.set_page_config(page_title="Zamanlı Görsel Şifreleme", layout="wide")
-st.title("🖼️ Zaman Ayarlı Görsel Şifreleme")
-
-# Sidebar (tema seçimi ve işlemler)
+# --- Sidebar (Kenar Çubuğu) ---
 with st.sidebar:
-    st.header("Ayarlar & Araçlar")
-    theme_choice = st.selectbox("Tema Seçimi:", ["Dark", "Light"], index=0)
-    # (Streamlit temayı doğrudan değiştirmez; ama yine gösteriyoruz)
-    st.write("Seçili Tema:", theme_choice)
+    st.image(create_sample_image_bytes(), use_column_width=True, caption="Örnek Resim Görünümü")
+    
+    st.subheader("Örnek Resim")
+    st.info("Test için hızlıca bir resim oluşturun ve şifreleme sekmesinden indirin.")
+    
+    # Örnek resim oluşturma ve indirme butonu
     if st.button("Örnek Resim Oluştur"):
-        # Orijinal create_sample_image mantığı
-        img = Image.new("RGB", (600,400), color=(70,130,180))
-        for y in range(img.height):
-            for x in range(img.width):
-                img.putpixel((x,y), (70 + int(x/img.width*80), 130 + int(y/img.height*40), 180))
-        sample_path = os.path.join(os.getcwd(), "sample_for_encrypt.png")
-        img.save(sample_path)
-        st.session_state.current_image_path = sample_path
-        st.session_state.current_image_bytes = bytes_from_pil(img, "PNG")
-        st.session_state.decrypted_image = None
-        log(f"Örnek resim oluşturuldu: {sample_path}")
-        st.success(f"Örnek resim oluşturuldu: {sample_path}")
+        img_bytes = create_sample_image_bytes()
+        st.session_state.generated_enc_bytes = img_bytes # Şifreleme sekmesinde göstermek için
+        st.session_state.generated_meta_bytes = None # Meta yok
+        log("Test için örnek resim oluşturuldu. 'Şifrele' sekmesinden indirebilirsiniz.")
 
-    if st.button("Klasörü Aç (Sunucu tarafı)"):
-        # Streamlit sunucusunda klasör açmak istemeyiz; sadece log atalım
-        log("Klasör açma talebi: Sunucuda tarayıcı penceresi açılamaz. Çalışma dizinine göz atın.")
-        st.info("Sunucu tarafında klasör açma yapılamaz; çıktı dosyalar çalışma dizinine kaydedilir.")
+    with st.expander("Yardım (Kullanım Kılavuzu)"):
+        st.markdown(
+            """
+            **Şifreleme:**
+            1. `🔒 Şifrele` sekmesine gidin.
+            2. Bir resim dosyası (`.png`, `.jpg`) yükleyin.
+            3. Gerekli ayarları (şifre, zaman, gizli mesaj) yapın.
+            4. `Şifrele` butonuna basın.
+            5. Oluşturulan `.png` ve `.meta` dosyalarını indirin.
+            
+            **Şifre Çözme:**
+            1. `🔓 Çöz` sekmesine gidin.
+            2. Şifrelenmiş `.png` dosyasını ve ilgili `.meta` dosyasını yükleyin.
+            3. Görsel şifresini (eğer gerekliyse) girin.
+            4. `Çöz` butonuna basın.
+            5. Resim, zamanı geldiyse ve şifre doğruysa sağdaki önizlemede görünecektir.
+            6. `Gizli Mesajı Göster` butonu (eğer mesaj varsa) aktifleşir.
+            """
+        )
+    
+    # Log kutusu (customtkinter'daki log_box'ın yerine)
+    st.subheader("İşlem Günlüğü")
+    # Streamlit'in widget kimliği çakışmasını önlemek için, bu metin alanının sadece bir kez
+    # çizildiğinden emin oluyoruz, ki zaten yan çubukta olduğu için bu kurala uymalı.
+    st.text_area("Loglar", value=st.session_state.log, height=300, disabled=True, key="log_area")
 
-# Main columns: sol - ayarlar, sağ - önizleme & log
-col1, col2 = st.columns([0.45, 0.55])
 
-with col1:
-    st.subheader("Dosya & Ayarlar")
+# --- Ana Alan (Sekmeler) ---
+tab_encrypt, tab_decrypt = st.tabs(["🔒 Şifrele", "🔓 Çöz"])
 
-    uploaded = st.file_uploader("Resim seçin veya örnek oluştur", type=["png","jpg","jpeg","bmp"])
-    if uploaded is not None:
-        # kaydet belleğe ve geçici dosyaya
-        bytes_data = uploaded.read()
-        st.session_state.current_image_bytes = bytes_data
-        # temp dosya path (kullanıcı orijinali yerine temp path)
-        fd, tmp_path = tempfile.mkstemp(suffix=os.path.splitext(uploaded.name)[1])
-        os.close(fd)
-        with open(tmp_path, "wb") as f:
-            f.write(bytes_data)
-        st.session_state.current_image_path = tmp_path
-        st.session_state.decrypted_image = None
-        st.session_state.secret_key_hash = ""
-        log("Dosya seçildi: " + tmp_path)
+# --- ŞİFRELEME SEKMESİ ---
+with tab_encrypt:
+    st.subheader("Yeni Bir Görseli Şifrele")
+    
+    with st.form("encrypt_form"):
+        uploaded_file = st.file_uploader(
+            "1. Şifrelenecek resmi seçin", 
+            type=["png", "jpg", "jpeg", "bmp"]
+        )
+        
+        st.markdown("---")
+        st.markdown("**Şifreleme Ayarları**")
+        
+        enc_pass = st.text_input("Görsel Şifresi (Çözme için)", type="password")
+        enc_no_pass = st.checkbox("Şifresiz açılmaya izin ver (Sadece zaman kilidi)")
+        
+        enc_secret_text = st.text_area("Gizli Mesaj (Meta veriye saklanır)", placeholder="Gizli notunuz...")
+        enc_secret_key = st.text_input("Gizli Mesaj Şifresi (Filigranı görmek için)", type="password", placeholder="Filigranı açacak şifre")
+        
+        min_date = datetime.datetime.now()
+        enc_time = st.datetime_input(
+            "Açılma Zamanı (Bu zamandan önce açılamaz)", 
+            value=min_date + datetime.timedelta(days=1),
+            min_value=min_date
+        )
+        
+        submitted = st.form_submit_button("🔒 Şifrele", use_container_width=True)
 
-    entry_pass = st.text_input("Görsel Şifresi (Çözme için):", type="password")
-    # pw strength (aynı mantık)
-    score = 0.0
-    if len(entry_pass) >= 8: score += 0.3
-    if any(c.isdigit() for c in entry_pass): score += 0.2
-    if any(c.isupper() for c in entry_pass): score += 0.2
-    if any(not c.isalnum() for c in entry_pass): score += 0.3
-    st.progress(min(score, 1.0), text="Şifre Güç Göstergesi")
-
-    allow_no_pass = st.checkbox("Şifresiz açılmaya izin ver", value=False)
-
-    entry_secret_text = st.text_input("Gizli Mesaj (Meta veriye saklanır):", value="")
-
-    entry_secret_key = st.text_input("Gizli Mesaj Şifresi (Filigranı görmek için):", type="password")
-
-    entry_time = st.text_input("Açılma Zamanı (YYYY-AA-GG SS:DD):", placeholder="Örn: 2025-12-31 23:59")
-
-    # Butonlar
-    btn_encrypt = st.button("🔒 Şifrele")
-    btn_decrypt = st.button("🔓 Çöz")
-
-    # Hidden state toggles
-    show_hidden_toggle = st.button("Gizli Mesajı Göster/Gizle")
-
-with col2:
-    st.subheader("Önizleme")
-    preview_slot = st.empty()
-    if st.session_state.current_image_bytes:
-        try:
-            preview_img = pil_from_bytes(st.session_state.current_image_bytes)
-            # eğer çözülmüş bir resim varsa öncelik ona
-            if st.session_state.decrypted_image is not None:
-                display_img = st.session_state.decrypted_image.copy()
-            else:
-                display_img = preview_img.copy()
-            preview_slot.image(display_img, use_column_width=True)
-        except Exception as e:
-            preview_slot.write("Önizleme yüklenemedi: " + str(e))
-    else:
-        preview_slot.write("(Resim seçilmedi)")
-
-    st.subheader("İşlem Durumu")
-    progress_bar = st.progress(st.session_state.progress)
-    log_container = st.empty()
-    log_container.text_area("İşlem Günlüğü", value=get_log_text(), height=220)
-
-    # Gizli mesaj label
-    if st.session_state.hidden_message.strip():
-        if st.session_state.secret_key_hash:
-            st.info("Not: Gizli mesaj meta veride bulundu. Filigran için gizli şifre gerekir.")
+    if submitted:
+        if uploaded_file is None:
+            st.error("Lütfen önce bir resim dosyası yükleyin.")
         else:
-            st.info("Not: Gizli mesaj meta veride bulundu. Filigran için şifre yok.")
-
-# ----------------------------- İşlem Fonksiyonları (Buton tetiklendiğinde) -----------------------------
-def set_progress(p):
-    st.session_state.progress = float(p)
-    # güncelleme için streamlit progress objesini güncelle
-    try:
-        progress_bar.progress(min(max(p, 0.0), 1.0))
-    except Exception:
-        pass
-
-def save_bytes_to_path(b: bytes, path: str):
-    with open(path, "wb") as f:
-        f.write(b)
-
-# Şifrele butonu
-if btn_encrypt:
-    st.session_state.log_lines = []  # temizle
-    set_progress(0.0)
-    image_bytes = st.session_state.current_image_bytes
-    if not image_bytes:
-        st.error("Hata: Lütfen bir resim dosyası seçin veya örnek oluşturun.")
-        log("Hata: Dosya ve zaman gerekli.")
-    elif not entry_time.strip():
-        st.error("Hata: Lütfen açılma zamanını belirtin.")
-        log("Hata: Dosya ve zaman gerekli.")
-    else:
-        try:
-            # parse zamanı
-            ot_dt = datetime.datetime.strptime(entry_time.strip(), "%Y-%m-%d %H:%M")
-            open_time_str = normalize_time(ot_dt)
-            # output paths - çalışma dizinine kaydedeceğiz
-            # orijinal path veya temp path
-            image_path = st.session_state.current_image_path or os.path.join(os.getcwd(), "uploaded_image.png")
-            enc_path, dec_path, meta_path = make_paths(image_path)
-            log("Şifreleme başlıyor...")
-            verify_tag, out_enc, img_hash = encrypt_image_file_from_bytes(
-                image_bytes,
-                entry_pass if not allow_no_pass else "",
-                open_time_str,
-                entry_secret_text,
-                entry_secret_key,
-                enc_path,
-                meta_path,
-                allow_no_pass,
-                progress_callback=set_progress
+            log("Şifreleme başlatıldı...")
+            progress_bar = st.progress(0, text="Başlatılıyor...")
+            image_bytes = uploaded_file.getvalue()
+            
+            pw_to_use = "" if enc_no_pass else enc_pass
+            
+            enc_bytes, meta_bytes = encrypt_image_file(
+                image_bytes, pw_to_use, enc_time, 
+                enc_secret_text, enc_secret_key, enc_no_pass,
+                progress_bar
             )
-            log(f"Şifreleme tamamlandı: {out_enc}")
-            st.success(f"Şifreleme tamamlandı!\n\nŞifreli dosya: {out_enc}\nMeta dosyası: {meta_path}")
-            # güncelle: streamlit preview için şifreli dosyanın bytes'ını yükle
-            with open(out_enc, "rb") as f:
-                st.session_state.current_image_bytes = f.read()
-                st.session_state.current_image_path = out_enc
-            # indirme butonları
-            with open(out_enc, "rb") as f:
-                st.download_button("Şifreli Dosyayı İndir", data=f, file_name=os.path.basename(out_enc), mime="image/png")
-            with open(meta_path, "r", encoding="utf-8") as f:
-                st.download_button("Meta Dosyasını İndir", data=f.read().encode("utf-8"), file_name=os.path.basename(meta_path), mime="application/json")
-        except Exception as e:
-            log("Şifreleme hatası: " + str(e))
-            st.error("Şifreleme Hatası: " + str(e))
-            set_progress(0.0)
+            
+            if enc_bytes and meta_bytes:
+                log("Şifreleme tamamlandı. Dosyalar indirilmeye hazır.")
+                st.success("Şifreleme Başarılı! Lütfen her iki dosyayı da indirin.")
+                st.session_state.generated_enc_bytes = enc_bytes
+                st.session_state.generated_meta_bytes = meta_bytes
+                
+                # Dosya adlarını belirle
+                base_name = os.path.splitext(uploaded_file.name)[0]
+                enc_filename = f"{base_name}_encrypted.png"
+                meta_filename = f"{base_name}_encrypted.meta"
+                
+                # İndirme butonları
+                st.download_button(
+                    label="1. Şifreli Resmi (.png) İndir",
+                    data=st.session_state.generated_enc_bytes,
+                    file_name=enc_filename,
+                    mime="image/png"
+                )
+                st.download_button(
+                    label="2. Meta Dosyasını (.meta) İndir",
+                    data=st.session_state.generated_meta_bytes,
+                    file_name=meta_filename,
+                    mime="application/json"
+                )
+            else:
+                log("Şifreleme başarısız.")
+                st.error("Şifreleme sırasında bir hata oluştu. Logları kontrol edin.")
+    
+    # Bu, kenar çubuğundaki 'Örnek Resim Oluştur'dan gelen resmi indirmek için
+    elif st.session_state.generated_enc_bytes and not st.session_state.generated_meta_bytes:
+        st.info("Kenar çubuğunda oluşturulan örnek resmi indirin.")
+        st.download_button(
+            label="Örnek Resmi İndir",
+            data=st.session_state.generated_enc_bytes,
+            file_name="sample_for_encrypt.png",
+            mime="image/png"
+        )
 
-# Çöz butonu
-if btn_decrypt:
-    st.session_state.log_lines = []
-    set_progress(0.0)
-    image_path = st.session_state.current_image_path
-    if not image_path:
-        st.error("Hata: Lütfen şifresini çözeceğiniz dosyayı seçin.")
-        log("Hata: Dosya yolu girin.")
-    else:
-        # meta dosyasını bul
-        base_path = image_path.replace("_encrypted.png", "")
-        enc_path, dec_path, meta_path = make_paths(base_path)
-        meta = None
-        if os.path.exists(meta_path):
-            try:
-                with open(meta_path, "r", encoding="utf-8") as f:
-                    meta = json.load(f)
-            except Exception:
-                meta = None
-        if not meta:
-            log("Hata: Meta dosyası bulunamadı veya bozuk.")
-            st.error(f"Meta Dosyası Hatası: Gerekli meta dosyası bulunamadı veya bozuk:\n{meta_path}")
-        else:
-            try:
-                open_time_str = meta.get("open_time")
-                allow_no = bool(meta.get("allow_no_password", False))
-                stored_tag = meta.get("verify_tag")
-                st.session_state.hidden_message = meta.get("hidden_message", "")
-                image_hash = meta.get("image_content_hash", "")
-                st.session_state.secret_key_hash = meta.get("secret_key_hash", "")
 
-                now = datetime.datetime.now()
+# --- ŞİFRE ÇÖZME SEKMESİ ---
+with tab_decrypt:
+    st.subheader("Şifreli Bir Görseli Çöz")
+    
+    # Çözme arayüzünü iki sütuna böl (Girişler ve Önizleme)
+    col1, col2 = st.columns(2)
+    
+    # Meta dosyası yüklendikten sonra açılma zamanını göstermek için
+    meta_data_placeholder = col1.empty()
+
+    with col1:
+        st.markdown("**1. Dosyaları Yükle**")
+        enc_file = st.file_uploader("Şifreli resmi (.png) seçin", type="png")
+        meta_file = st.file_uploader("Meta dosyasını (.meta) seçin", type="meta")
+        
+        # --- Meta Dosyası Önizleme Kontrolü ---
+        meta_data_available = False
+        meta = {}
+        if meta_file:
+            try:
+                meta_content = meta_file.getvalue().decode('utf-8')
+                meta = json.loads(meta_content)
+                meta_data_available = True
+                
+                # Meta verisinden açılma zamanını çek ve göster
+                open_time_str = meta.get("open_time", "Bilinmiyor")
                 ot_dt = datetime.datetime.strptime(open_time_str, "%Y-%m-%d %H:%M")
-                if now < ot_dt:
-                    log("Henüz zamanı gelmedi.")
-                    st.warning(f"Bekleme Gerekli: Bu dosyanın açılmasına daha var.\n\nAçılma Zamanı: {open_time_str}")
-                else:
-                    pw_to_use = "" if allow_no else entry_pass
-                    if (not allow_no) and (not entry_pass):
-                        log("Hata: Şifre gerekli.")
-                        st.warning("Bu dosya için şifre gereklidir.")
-                    else:
-                        log("Çözme işlemi başlıyor...")
-                        dec_img, key_hex = decrypt_image_from_file(enc_path, pw_to_use, open_time_str, image_hash, progress_callback=set_progress)
-                        calc_tag = hashlib.sha256(key_hex.encode("utf-8") + dec_img.tobytes()).hexdigest()
-                        if calc_tag != stored_tag:
-                            log("Doğrulama başarısız: yanlış şifre, yanlış görsel veya bozulmuş dosya.")
-                            st.error("Çözme Hatası: Yanlış şifre girildi, yanlış görsel için meta dosyası kullanıldı veya dosya bozulmuş. Çözme işlemi iptal edildi.")
-                            set_progress(0.0)
-                            st.session_state.hidden_message = ""
-                            st.session_state.secret_key_hash = ""
-                        else:
-                            st.session_state.decrypted_image = dec_img
-                            # kaydet disk'e
-                            dec_img.save(dec_path)
-                            log("Çözülmüş orijinal görsel diske kaydedildi: " + dec_path)
-                            st.success("Görselin şifresi çözüldü.")
-                            # indirme düğmesi
-                            with open(dec_path, "rb") as f:
-                                st.download_button("Çözülmüş Görseli İndir", data=f, file_name=os.path.basename(dec_path), mime="image/png")
-                            if st.session_state.hidden_message.strip():
-                                log(f"Not: Gizli bir mesaj bulundu! Görmek için butona tıklayın. (Gizli Şifre gerekli: {'Evet' if st.session_state.secret_key_hash else 'Hayır'})")
+                
+                now = datetime.datetime.now()
+                is_open = "🔓 AÇILABİLİR" if now >= ot_dt else "🔒 KİLİTLİ"
+                color = "green" if now >= ot_dt else "red"
+
+                meta_data_placeholder.markdown(
+                    f"**Açılma Zamanı Bilgisi:**\n\n"
+                    f"Bu dosya **<span style='color:{color}'>{open_time_str}</span>** tarihinde açılmak üzere ayarlanmıştır. Şu anki durumu: **{is_open}**", 
+                    unsafe_allow_html=True
+                )
+                
             except Exception as e:
-                log("Çözme hatası: " + str(e))
-                st.error("Çözme Hatası: " + str(e))
-                set_progress(0.0)
-                st.session_state.hidden_message = ""
-                st.session_state.secret_key_hash = ""
+                meta_data_placeholder.error("Meta dosya okuma hatası.")
+                log(f"Meta dosya önizleme hatası: {e}")
 
-# Gizli mesaj göster/gizle butonu işlevi (modal ile şifre sor)
-if show_hidden_toggle:
-    if not st.session_state.decrypted_image:
-        st.warning("Hata: Önizlemede çözülmüş bir görsel yok.")
-        log("Hata: Önizlemede çözülmüş bir görsel yok.")
-    elif not st.session_state.hidden_message.strip():
-        st.info("Gizli mesaj meta verisinde bulunamadı.")
-        log("Gizli mesaj meta verisinde bulunamadı.")
-    else:
-        # Eğer secret_key_hash varsa modal ile sorma; yoksa doğrudan göster
-        if st.session_state.secret_key_hash:
-            with st.modal("Gizli Mesaj Şifresi", clear_on_submit=False):
-                entered = st.text_input("Gizli mesaj filigranını görmek için şifreyi girin:", type="password", key="modal_secret_input")
-                ok = st.button("Tamam", key="modal_ok")
-                cancel = st.button("İptal", key="modal_cancel")
-                if ok:
-                    entered_hash = hashlib.sha256(entered.encode('utf-8')).hexdigest()
-                    if entered_hash != st.session_state.secret_key_hash:
-                        st.error("Gizli mesaj filigranı için girilen şifre yanlış.")
-                        log("Hata: Gizli mesaj şifresi yanlış.")
+        st.markdown("**2. Şifreyi Gir**")
+        dec_pass = st.text_input("Görsel Şifresi (gerekliyse)", type="password", key="decrypt_pass")
+        
+        if st.button("🔓 Çöz", use_container_width=True):
+            # Çözme butonuna basıldığında tüm durumları sıfırla (log hariç)
+            for k in ['decrypted_image', 'watermarked_image', 'is_message_visible', 'prompt_secret_key']:
+                st.session_state[k] = None
+            
+            log("--- Yeni Çözme İşlemi Başlatıldı ---")
+            
+            if not enc_file or not meta_file:
+                st.error("Lütfen hem şifreli .png hem de .meta dosyasını yükleyin.")
+            elif not meta_data_available:
+                 st.error("Yüklenen meta dosyası geçerli bir JSON formatında değil.")
+            else:
+                try:
+                    # Meta verilerini al
+                    open_time_str = meta.get("open_time")
+                    allow_no = bool(meta.get("allow_no_password", False))
+                    stored_tag = meta.get("verify_tag")
+                    image_hash = meta.get("image_content_hash", "")
+                    
+                    st.session_state.hidden_message = meta.get("hidden_message", "")
+                    st.session_state.secret_key_hash = meta.get("secret_key_hash", "")
+
+                    # Zaman kontrolü
+                    now = datetime.datetime.now()
+                    ot_dt = datetime.datetime.strptime(open_time_str, "%Y-%m-%d %H:%M")
+                    
+                    if now < ot_dt:
+                        log("Hata: Henüz zamanı gelmedi.")
+                        st.warning(f"Bu dosyanın açılmasına daha var.\n\nAçılma Zamanı: {open_time_str}")
                     else:
-                        log("Gizli mesaj şifresi doğru. Filigran gösteriliyor...")
-                        # filigranlı görüntüyü oluştur ve preview'yi güncelle
-                        st.session_state.watermarked_image = add_text_watermark(st.session_state.decrypted_image, st.session_state.hidden_message)
-                        # göster
-                        st.image(st.session_state.watermarked_image, use_column_width=True)
-                        st.success("Filigran gösterildi.")
-                if cancel:
-                    log("Gizli mesaj şifresi girilmedi. İşlem iptal edildi.")
+                        # Şifre kontrolü
+                        pw_to_use = "" if allow_no else dec_pass
+                        if not allow_no and not dec_pass:
+                            log("Hata: Şifre gerekli.")
+                            st.error("Bu dosya için şifre gereklidir, ancak şifre girilmedi.")
+                        else:
+                            log("Zaman ve şifre kontrolleri tamam. Çözme işlemi başlıyor...")
+                            progress_bar = st.progress(0, text="Başlatılıyor...")
+                            enc_image_bytes = enc_file.getvalue()
+                            
+                            dec_img, key_hex = decrypt_image_in_memory(
+                                enc_image_bytes, pw_to_use, open_time_str, image_hash, progress_bar
+                            )
+                            
+                            if dec_img is None:
+                                # Fonksiyon içinde hata oluştu, loglandı
+                                pass 
+                            else:
+                                # Doğrulama (Verification)
+                                calc_tag = hashlib.sha256(key_hex.encode("utf-8") + dec_img.tobytes()).hexdigest()
+                                
+                                if calc_tag != stored_tag:
+                                    log("Doğrulama başarısız: Yanlış şifre veya bozuk dosya.")
+                                    st.error("Çözme Hatası: Yanlış şifre girildi veya dosyalar bozulmuş.")
+                                    # init_state() # Hata durumunda her şeyi temizlemiyoruz ki, diğer bilgiler korunsun
+                                    st.session_state.decrypted_image = None
+                                else:
+                                    log("Doğrulama başarılı! Resim çözüldü.")
+                                    st.success("Görselin şifresi başarıyla çözüldü!")
+                                    st.session_state.decrypted_image = dec_img # PIL Image objesini state'e kaydet
+                                    
+                except Exception as e:
+                    log(f"Çözme hatası: {e}")
+                    st.error(f"Çözme sırasında beklenmedik bir hata oluştu: {e}")
+                    st.session_state.decrypted_image = None # Hata durumunda temizle
+
+    with col2:
+        st.subheader("Önizleme")
+        
+        # Hangi resmi göstereceğimize karar ver
+        image_to_show = None
+        caption = "Çözüldükten sonra resim burada görünecek."
+        
+        if st.session_state.is_message_visible and st.session_state.watermarked_image is not None:
+            image_to_show = st.session_state.watermarked_image
+            caption = "Çözülmüş Görüntü (Filigranlı)"
+        elif st.session_state.decrypted_image is not None:
+            image_to_show = st.session_state.decrypted_image
+            caption = "Çözülmüş Görüntü (Orijinal)"
+
+        # Resmi göster
+        if image_to_show:
+            st.image(image_to_show, caption=caption, use_column_width=True)
+            
+            # Çözülmüş resmi indirme butonu
+            img_byte_arr = io.BytesIO()
+            image_to_show.save(img_byte_arr, format='PNG')
+            st.download_button(
+                label="Görüntülenen Resmi İndir",
+                data=img_byte_arr.getvalue(),
+                file_name="decrypted_image.png",
+                mime="image/png"
+            )
         else:
-            # doğrudan göster
-            st.session_state.watermarked_image = add_text_watermark(st.session_state.decrypted_image, st.session_state.hidden_message)
-            st.image(st.session_state.watermarked_image, use_column_width=True)
-            log("Gizli mesaj şifresi yok. Filigran gösteriliyor...")
+            st.info(caption)
+        
+        st.markdown("---")
+        
+        # --- Gizli Mesaj Gösterme Mantığı ---
+        
+        # 1. Mesaj varsa ve resim çözülmüşse butonu göster
+        if st.session_state.decrypted_image is not None and st.session_state.hidden_message:
+            
+            if st.session_state.is_message_visible:
+                # Mesaj görünür durumdaysa, gizle butonu
+                if st.button("Gizli Mesajı Gizle", use_container_width=True):
+                    log("Gizli mesaj gizlendi.")
+                    st.session_state.is_message_visible = False
+                    st.session_state.prompt_secret_key = False
+                    st.rerun() # Ekranı hemen güncelle
+            else:
+                # Mesaj gizli durumdaysa, göster butonu
+                if st.button("Gizli Mesajı Göster", use_container_width=True):
+                    if st.session_state.secret_key_hash:
+                        # Gizli mesaj için şifre gerekiyorsa, şifre sorma alanını aç
+                        log("Gizli mesaj şifresi isteniyor...")
+                        st.session_state.prompt_secret_key = True
+                        st.rerun()
+                    else:
+                        # Şifre gerekmiyorsa, doğrudan göster
+                        log("Gizli mesaj (şifresiz) gösteriliyor.")
+                        st.session_state.watermarked_image = add_text_watermark(
+                            st.session_state.decrypted_image, 
+                            st.session_state.hidden_message
+                        )
+                        st.session_state.is_message_visible = True
+                        st.rerun()
 
-# Preview güncelleme: eğer watermarked veya decrypted varsa göster
-if st.session_state.watermarked_image is not None:
-    with col2:
-        st.image(st.session_state.watermarked_image, use_column_width=True)
-elif st.session_state.decrypted_image is not None:
-    with col2:
-        st.image(st.session_state.decrypted_image, use_column_width=True)
-
-# Log alanını güncelle
-log_container.text_area("İşlem Günlüğü", value=get_log_text(), height=220)
-
-# Footer/help
-st.markdown("---")
-st.caption("Kılavuz: 1) Resim seçin veya Örnek oluştur. 2) Gerekliyse şifre girin. 3) Açılma zamanını girin. 4) Şifrele / Çöz butonlarını kullanın. Çözdükten sonra gizli mesajı görmek için 'Gizli Mesajı Göster/Gizle' butonuna tıklayın.")
+        # 2. Gizli mesaj şifresi sorma alanı (customtkinter'daki 'SecretKeyDialog' yerine)
+        if st.session_state.prompt_secret_key:
+            st.warning("Filigranı görmek için gizli mesaj şifresini girin:")
+            
+            with st.form("secret_key_form"):
+                entered_key = st.text_input("Gizli Mesaj Şifresi", type="password", key="modal_pass")
+                submit_key = st.form_submit_button("Onayla")
+                
+            if submit_key:
+                entered_hash = hashlib.sha256(entered_key.encode('utf-8')).hexdigest()
+                if entered_hash == st.session_state.secret_key_hash:
+                    log("Gizli mesaj şifresi doğru. Filigran gösteriliyor.")
+                    st.session_state.watermarked_image = add_text_watermark(
+                        st.session_state.decrypted_image, 
+                        st.session_state.hidden_message
+                    )
+                    st.session_state.is_message_visible = True
+                    st.session_state.prompt_secret_key = False
+                    st.rerun()
+                else:
+                    log("Hata: Gizli mesaj şifresi yanlış.")
+                    st.error("Gizli mesaj şifresi yanlış.")
+        
+        # 3. Gizli mesaj metnini göster (eğer görünürse)
+        if st.session_state.is_message_visible:
+            st.success(f"**GİZLİ MESAJ (Meta Veri):**\n\n{st.session_state.hidden_message}")
