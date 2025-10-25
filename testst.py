@@ -14,7 +14,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🖼️ Zamanlı Görsel Şifreleme (🇹🇷 TR Saati ile)")
+st.title("🖼️ Zamanlı Görsel Şifreleme (🇹🇷)")
 
 # ----------------------------- Session State (Oturum Durumu) -----------------------------
 
@@ -625,4 +625,5 @@ with tab_decrypt:
         
         if st.session_state.is_message_visible and st.session_state.hidden_message:
             st.success(f"**GİZLİ MESAJ (MetaA Veri):**\n\n{st.session_state.hidden_message}")
+
 
