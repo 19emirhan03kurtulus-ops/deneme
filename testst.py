@@ -1,7 +1,7 @@
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont 
 import hashlib, datetime, random, os, json, io
-import zipfile # ZIP dosyası oluşturmak için eklendi
+import zipfile 
 
 # ----------------------------- Ayarlar ve Başlık -----------------------------
 st.set_page_config(
@@ -15,8 +15,8 @@ st.title("🖼️ Zamanlı Görsel Şifreleme (Streamlit)")
 # ----------------------------- Session State (Oturum Durumu) -----------------------------
 def init_state():
     """Tüm oturum durumlarını başlatır ve varsayılanları atar."""
-    # Kararlı başlangıç değeri: Şu andan bir gün sonrası 
-    default_open_time = datetime.datetime.now() + datetime.timedelta(days=1)
+    # Kararlı başlangıç değeri: Şu andan 5 dakika sonrası (Daha esnek bir varsayılan)
+    default_open_time = datetime.datetime.now() + datetime.timedelta(minutes=5)
     
     defaults = {
         'log': "",
@@ -277,7 +277,8 @@ with tab_encrypt:
     st.subheader("Yeni Bir Görseli Şifrele")
     
     # KULLANILABİLECEK MİNİMUM ZAMANI HESAPLA (Şu anki zamandan 1 dakika sonrası)
-    min_date_relaxed = datetime.datetime.now() + datetime.timedelta(minutes=1)
+    # Bu değer her zaman dinamik olarak hesaplanmalıdır.
+    dynamic_min_value = datetime.datetime.now() + datetime.timedelta(minutes=1)
 
     with st.form("encrypt_form"):
         uploaded_file = st.file_uploader(
@@ -296,14 +297,46 @@ with tab_encrypt:
         enc_secret_text = st.text_area("Gizli Mesaj (Meta veriye saklanır)", placeholder="Gizli notunuz...", key="enc_secret_text_area")
         enc_secret_key = st.text_input("Gizli Mesaj Şifresi (Filigranı görmek için)", type="password", placeholder="Filigranı açacak şifre", key="enc_secret_key_input")
         
-        # AÇILMA ZAMANI (Datetime Input)
+        st.markdown("---")
+        st.markdown("**Açılma Zamanı Ayarları**")
         
+        # --- HIZLI ZAMAN AYARLAMA BUTONLARI ---
+        # Üçüncü bir sütun eklendi
+        col_time_a, col_time_b, col_time_c = st.columns([1, 1, 1])
+        
+        if col_time_a.button("Şimdi + 5 Dakika", key="set_5min_btn", use_container_width=True):
+            log("Açılma zamanı 5 dakika sonraya ayarlandı.")
+            st.session_state.encryption_start_time = datetime.datetime.now() + datetime.timedelta(minutes=5)
+            st.rerun()
+
+        if col_time_b.button("Şimdi + 1 Gün", key="set_1day_btn", use_container_width=True):
+            log("Açılma zamanı 1 gün sonraya ayarlandı.")
+            st.session_state.encryption_start_time = datetime.datetime.now() + datetime.timedelta(days=1)
+            st.rerun()
+
+        if col_time_c.button("Şimdi + 5 Dk (Yenile)", key="set_default_btn", use_container_width=True):
+            log("Açılma zamanı varsayılan değere (Şimdi + 5 Dk) güncellendi.")
+            st.session_state.encryption_start_time = datetime.datetime.now() + datetime.timedelta(minutes=5)
+            st.rerun()
+
+        # --- HIZLI ZAMAN AYARLAMA BUTONLARI SONU ---
+        
+        # AÇILMA ZAMANI (Datetime Input)
+        current_time_value = st.session_state.encryption_start_time
+
+        # GÜVENLİK KONTROLÜ: Eğer mevcut 'value' min_value'dan küçükse (ki bu Streamlit hatasına yol açar),
+        # value'yu otomatik olarak min_value'ya eşitle. Bu, AttributeError'u önler.
+        if current_time_value < dynamic_min_value:
+             st.session_state.encryption_start_time = dynamic_min_value
+             current_time_value = dynamic_min_value
+             log("Güvenlik: Oturum zamanı minimum değerden küçüktü, otomatik olarak güncellendi.")
+
         enc_time = st.datetime_input(
             "Açılma Zamanı (Bu zamandan önce açılamaz)", 
-            value=st.session_state.encryption_start_time,
-            min_value=min_date_relaxed, # Minimum değer 1 dakika sonrası olarak ayarlandı
+            value=current_time_value,
+            min_value=dynamic_min_value, 
             key="encryption_time_input_fixed", 
-            help=f"Resmin şifresi sadece bu tarih ve saatten SONRA çözülebilir. Lütfen saati ve tarihi dikkatlice ayarlayın. Minimum ayar: {normalize_time(min_date_relaxed)}"
+            help=f"Resmin şifresi sadece bu tarih ve saatten SONRA çözülebilir. Lütfen saati ve tarihi dikkatlice ayarlayın. Minimum ayar: {normalize_time(dynamic_min_value)}"
         )
         
         # Kullanıcı değeri değiştirdiğinde, kararlı değeri de güncelleyelim.
@@ -567,6 +600,3 @@ with tab_decrypt:
                     else:
                         log("Hata: Gizli mesaj şifresi yanlış.")
                         st.error("Gizli mesaj şifresi yanlış.")
-        
-        if st.session_state.is_message_visible:
-            st.success(f"**GİZLİ MESAJ (Meta Veri):**\n\n{st.session_state.hidden_message}")
