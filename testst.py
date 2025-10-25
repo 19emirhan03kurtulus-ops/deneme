@@ -469,10 +469,8 @@ with col_settings:
 
             if not enc_file or not meta_file:
                 st.error("Lütfen hem şifreli .png hem de .meta dosyasını yükleyin.")
-                # Düzeltme: Hata oluştuğunda sadece devam et, fonksiyon dışına (global scope) "return" yazma.
             elif not meta_data_available:
                  st.error("Yüklenen meta dosyası geçerli bir JSON formatında değil.")
-                 # Düzeltme: Hata oluştuğunda sadece devam et.
             else:
                 try:
                     open_time_str = meta.get("open_time")
@@ -492,8 +490,6 @@ with col_settings:
                     else:
                         pw_to_use = "" 
                         
-                        # CRITICAL FIX: Fonksiyonun ortasında "return" kullanmak yerine
-                        # bu durumu bir flag ile kontrol edebiliriz.
                         should_proceed = True
                         if not allow_no and not dec_pass: 
                             log("Hata: Şifre gerekli ancak girilmedi.")
