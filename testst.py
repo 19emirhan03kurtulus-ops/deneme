@@ -31,9 +31,18 @@ def get_initial_state():
         'prompt_secret_key': False,
         'generated_enc_bytes': None,
         'generated_meta_bytes': None,
-        # Dosya yükleyicilerin ve metin girişlerinin Streamlit yeniden çalışma döngüsünde değerlerini koruyabilmesi için key'lerini resetlememiz gerekir.
+        
+        # Temizleme için dinamik keyler için sayaç (KRİTİK)
+        'reset_counter': 0, 
+        
+        # Tüm Text Input/Checkbox default değerleri
+        'enc_pass_input': '',
+        'enc_no_pass_checkbox': False,
+        'enc_secret_text_input': '',
+        'enc_secret_key_input': '',
+        'enc_time_str': '00:00',
         'decrypt_pass': '', 
-        # Dosya yükleyici key'lerini burada tutmuyoruz, onun yerine özel bir temizleme fonksiyonu kullanacağız.
+        'modal_pass': '',
     }
 
 def init_state():
@@ -52,24 +61,31 @@ def reset_app():
 
 def reset_all_inputs():
     """Hem Şifrele hem de Çöz sekmesindeki tüm yüklemeleri, girdileri ve çıktıları sıfırlar."""
-    log("Tüm Şifreleme ve Çözme girdileri temizlendi.")
+    log("Tüm Şifreleme ve Çözme girdileri temizlendi. Yüklenen dosyalar sıfırlandı.")
     
-    # Şifreleme (Encrypt) ile ilgili state'leri temizle
-    st.session_state['generated_enc_bytes'] = None
-    st.session_state['generated_meta_bytes'] = None
-    
-    # Şifre Çözme (Decrypt) ile ilgili state'leri temizle
+    # 1. Çıktı ve Kilitli state'leri temizle
     st.session_state['decrypted_image'] = None
     st.session_state['watermarked_image'] = None
     st.session_state['hidden_message'] = ""
     st.session_state['secret_key_hash'] = ""
     st.session_state['is_message_visible'] = False
     st.session_state['prompt_secret_key'] = False
+    st.session_state['generated_enc_bytes'] = None
+    st.session_state['generated_meta_bytes'] = None
     
-    # Metin girişlerini temizle
+    # 2. Text Input/Checkbox state'lerini temizle
     st.session_state['decrypt_pass'] = ''
+    st.session_state['enc_pass_input'] = ''
+    st.session_state['enc_secret_text_input'] = ''
+    st.session_state['enc_secret_key_input'] = ''
+    st.session_state['enc_no_pass_checkbox'] = False
+    st.session_state['enc_time_str'] = '00:00'
+    st.session_state['modal_pass'] = ''
+
+    # 3. KRİTİK ADIM: Dosya yükleyicilerini ve diğer dinamik bileşenleri sıfırlamak için sayacı artır.
+    # Bu, o bileşenlerin key'ini değiştirir ve Streamlit'in onları yeniden oluşturmasını sağlar.
+    st.session_state['reset_counter'] += 1
     
-    # Dosya yükleyicilerini ve formları temizlemek için st.rerun() çağırıyoruz.
     st.rerun()
 
 init_state()
@@ -131,6 +147,7 @@ def add_text_watermark(img: Image.Image, hidden_message: str) -> Image.Image:
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
     except AttributeError:
+        # Fallback for older Pillow versions
         text_w = draw.textlength(full_text, font=font)
         text_h = 24 * len(text_lines)
 
@@ -253,6 +270,7 @@ def decrypt_image_in_memory(enc_image_bytes, password, open_time_str, image_hash
 
 # --- Sidebar (Kenar Çubuğu) ---
 with st.sidebar:
+    # Sidebar'daki örnek resim
     st.image(create_sample_image_bytes(), use_column_width=True, caption="Örnek Resim Görünümü")
     
     st.subheader("Uygulama Kontrolü")
@@ -265,10 +283,12 @@ with st.sidebar:
     
     if st.button("Örnek Resim Oluştur"):
         img_bytes = create_sample_image_bytes()
+        # Çıktı state'lerini güncelle
         st.session_state.generated_enc_bytes = img_bytes
         st.session_state.generated_meta_bytes = None
         log("Test için örnek resim oluşturuldu. 'Şifrele' sekmesinden indirebilirsiniz.")
-
+        st.rerun() # Yeni durumu hemen yansıtmak için
+    
     with st.expander("Yardım (Kullanım Kılavuzu)"):
         st.markdown(
             """
@@ -282,7 +302,7 @@ with st.sidebar:
             **Şifre Çözme:**
             1. `🔓 Çöz` sekmesinde iki dosyayı da yükleyin.
             2. Şifre (gerekliyse) girin ve `Çöz` butonuna basın. Resim, açılma zamanı geldiyse çözülür.
-            3. **Temizle Butonu:** Tüm yüklenen dosya ve girilen şifreyi **(Şifrele ve Çöz sekmelerinde)** siler.
+            3. **Temizle Butonu:** Tüm yüklenen dosya, şifre ve sonuçları **her iki sekmede de** siler.
             """
         )
     
@@ -297,11 +317,11 @@ tab_encrypt, tab_decrypt = st.tabs(["🔒 Şifrele", "🔓 Çöz"])
 with tab_encrypt:
     st.subheader("Yeni Bir Görseli Şifrele")
     
-    # Şifreleme sekmesindeki dosya yükleyicisi için dinamik bir key kullanıyoruz
+    # KRİTİK: Dosya yükleyiciyi sıfırlamak için dinamik key kullanıyoruz
     uploaded_file = st.file_uploader(
         "1. Şifrelenecek resmi seçin", 
         type=["png", "jpg", "jpeg", "bmp"],
-        key="encrypt_file_uploader" 
+        key=f"encrypt_file_uploader_{st.session_state.reset_counter}" 
     )
     
     with st.form("encrypt_form"):
@@ -309,11 +329,14 @@ with tab_encrypt:
         st.markdown("---")
         st.markdown("**Şifreleme Ayarları**")
         
-        enc_pass = st.text_input("Görsel Şifresi (Çözme için)", type="password", key="enc_pass_input")
-        enc_no_pass = st.checkbox("Şifresiz açılmaya izin ver (Sadece zaman kilidi)", key="enc_no_pass_checkbox")
+        # Giriş değerlerini session state'ten alarak sıfırlama özelliğini destekliyoruz
+        enc_pass = st.text_input("Görsel Şifresi (Çözme için)", type="password", key="enc_pass_input", value=st.session_state.enc_pass_input)
         
-        enc_secret_text = st.text_area("Gizli Mesaj (Meta veriye saklanır)", placeholder="Gizli notunuz...", key="enc_secret_text_input")
-        enc_secret_key = st.text_input("Gizli Mesaj Şifresi (Filigranı görmek için)", type="password", placeholder="Filigranı açacak şifre", key="enc_secret_key_input")
+        # Checkbox değerini session state'ten al
+        enc_no_pass = st.checkbox("Şifresiz açılmaya izin ver (Sadece zaman kilidi)", key="enc_no_pass_checkbox", value=st.session_state.enc_no_pass_checkbox)
+        
+        enc_secret_text = st.text_area("Gizli Mesaj (Meta veriye saklanır)", placeholder="Gizli notunuz...", key="enc_secret_text_input", value=st.session_state.enc_secret_text_input)
+        enc_secret_key = st.text_input("Gizli Mesaj Şifresi (Filigranı görmek için)", type="password", placeholder="Filigranı açacak şifre", key="enc_secret_key_input", value=st.session_state.enc_secret_key_input)
         
         st.markdown("---")
         st.markdown("**2. Açılma Zamanı Ayarı (Türkiye Saati ile)**")
@@ -322,20 +345,22 @@ with tab_encrypt:
         
         min_date = datetime.datetime.now(TURKISH_TZ).date()
         
+        # Varsayılan değeri hesapla (yarın 00:00)
+        default_date = min_date + datetime.timedelta(days=1)
+        
         with col_date:
+            # KRİTİK: Tarih input'u için de dinamik key kullanıyoruz
             enc_date = st.date_input(
                 "Açılma Tarihi (YYYY-AA-GG)",
-                # Tarih ve saat inputlarının değerlerini temizlemek için key'leri kullanıyoruz. 
-                # Ancak form submit edildikten sonra temizlenmesini istediğimiz için form key'i yetiyor.
-                value=min_date + datetime.timedelta(days=1),
+                value=default_date,
                 min_value=min_date,
-                key="enc_date" 
+                key=f"enc_date_{st.session_state.reset_counter}" 
             )
 
         with col_time:
             enc_time_str = st.text_input(
                 "Açılma Saati (HH:MM formatında)",
-                value="00:00",
+                value=st.session_state.enc_time_str, # Session state'ten al
                 placeholder="Örn: 14:30",
                 key="enc_time_str" 
             )
@@ -347,18 +372,23 @@ with tab_encrypt:
             hour, minute = map(int, enc_time_str.split(':'))
             if 0 <= hour <= 23 and 0 <= minute <= 59:
                 enc_time_val = datetime.time(hour, minute, 0)
-                # Burası KRİTİK: Kullanıcının girdiği tarih/saat bilgisini al ve TZ-aware (İstanbul) yap
+                # Kullanıcının girdiği tarih/saat bilgisini al ve TZ-aware (İstanbul) yap
                 naive_dt = datetime.datetime.combine(enc_date, enc_time_val).replace(second=0, microsecond=0)
                 enc_time_dt = naive_dt.replace(tzinfo=TURKISH_TZ)
                 
                 time_format_valid = True
             else:
-                st.error("Saat/Dakika değerleri geçerli aralıkta değil.")
+                # Sadece loglama ve uyarı
                 log("Hata: Geçersiz saat/dakika aralığı.")
         except Exception:
-            st.error("Lütfen saati **HH:MM** formatında doğru girin. (Örn: 14:30)")
+            # Sadece loglama ve uyarı
             log("Hata: Geçersiz saat formatı.")
             time_format_valid = False
+            
+        # Formun sadece geçerli zaman girildiğinde submit edilmesini sağlamak için ek kontrol
+        if not time_format_valid and st.session_state.enc_time_str != '00:00':
+            st.error("Lütfen saati **HH:MM** formatında doğru girin. (Örn: 14:30)")
+
 
         submitted = st.form_submit_button("🔒 Şifrele", use_container_width=True)
 
@@ -378,6 +408,13 @@ with tab_encrypt:
         if uploaded_file is None:
             st.error("Lütfen önce bir resim dosyası yükleyin.")
         else:
+            # Kullanıcının girdiği son değerleri session_state'e kaydet
+            st.session_state.enc_pass_input = enc_pass
+            st.session_state.enc_no_pass_checkbox = enc_no_pass
+            st.session_state.enc_secret_text_input = enc_secret_text
+            st.session_state.enc_secret_key_input = enc_secret_key
+            st.session_state.enc_time_str = enc_time_str
+            
             log("Şifreleme başlatıldı...")
             progress_bar = st.progress(0, text="Başlatılıyor...")
             image_bytes = uploaded_file.getvalue()
@@ -417,6 +454,7 @@ with tab_encrypt:
                 log("Şifreleme başarısız.")
                 st.error("Şifreleme sırasında bir hata oluştu. Logları kontrol edin.")
     
+    # Örnek Resim indirme butonu, sadece kenar çubuğundan oluşturulduysa gösterilir
     elif st.session_state.generated_enc_bytes and not st.session_state.generated_meta_bytes:
         st.info("Kenar çubuğunda oluşturulan örnek resmi indirin. Bu resim şifresizdir.")
         st.download_button(
@@ -436,9 +474,9 @@ with tab_decrypt:
 
     with col1:
         st.markdown("**1. Dosyaları Yükle**")
-        # Dosya yükleyicileri için temizleme amaçlı key'leri kullanıyoruz.
-        enc_file = st.file_uploader("Şifreli resmi (.png) seçin", type="png", key="dec_enc_file")
-        meta_file = st.file_uploader("Meta dosyasını (.meta) seçin", type="meta", key="dec_meta_file")
+        # KRİTİK: Dosya yükleyicileri sıfırlamak için dinamik key kullanıyoruz
+        enc_file = st.file_uploader("Şifreli resmi (.png) seçin", type="png", key=f"dec_enc_file_{st.session_state.reset_counter}")
+        meta_file = st.file_uploader("Meta dosyasını (.meta) seçin", type="meta", key=f"dec_meta_file_{st.session_state.reset_counter}")
         
         meta_data_available = False
         meta = {}
@@ -501,8 +539,8 @@ with tab_decrypt:
                 log(f"Meta dosya önizleme hatası: {e}")
 
         st.markdown("**2. Şifreyi Gir**")
-        # Şifre girişi için key kullanarak state'ini reset_decrypt_inputs ile temizleyebiliriz
-        dec_pass = st.text_input("Görsel Şifresi (gerekliyse)", type="password", key="decrypt_pass")
+        # Giriş değerini session state'ten alarak sıfırlama özelliğini destekliyoruz
+        dec_pass = st.text_input("Görsel Şifresi (gerekliyse)", type="password", key="decrypt_pass", value=st.session_state.decrypt_pass)
         
         # Çöz ve Temizle butonlarını yan yana yerleştirelim
         col_dec_btn, col_res_btn = st.columns([2, 1])
@@ -523,6 +561,9 @@ with tab_decrypt:
                         st.error("Yüklenen meta dosyası geçerli bir JSON formatında değil.")
                 else:
                     try:
+                        # Kullanıcının girdiği şifreyi session state'e kaydet
+                        st.session_state.decrypt_pass = dec_pass
+                        
                         open_time_str = meta.get("open_time")
                         allow_no = bool(meta.get("allow_no_password", False))
                         stored_tag = meta.get("verify_tag")
@@ -649,10 +690,14 @@ with tab_decrypt:
             st.warning("Filigranı görmek için gizli mesaj şifresini girin:")
             
             with st.form("secret_key_form"):
-                entered_key = st.text_input("Gizli Mesaj Şifresi", type="password", key="modal_pass")
+                # Giriş değerini session state'ten alarak sıfırlama özelliğini destekliyoruz
+                entered_key = st.text_input("Gizli Mesaj Şifresi", type="password", key="modal_pass", value=st.session_state.modal_pass)
                 submit_key = st.form_submit_button("Onayla")
                 
             if submit_key:
+                # Kullanıcının girdiği şifreyi session state'e kaydet
+                st.session_state.modal_pass = entered_key
+                
                 entered_hash = hashlib.sha256(entered_key.encode('utf-8')).hexdigest()
                 if entered_hash == st.session_state.secret_key_hash:
                     log("Gizli mesaj şifresi doğru. Filigran gösteriliyor.")
