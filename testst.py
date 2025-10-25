@@ -181,96 +181,6 @@ def create_sample_image_bytes():
     log("Örnek resim hafızada oluşturuldu.")
     return img_bytes
 
-# ----------------------------- İkili İndirme Fonksiyonu (Tek Buton) -----------------------------
-
-def download_button_js(enc_bytes, meta_bytes, base_name):
-    """
-    Şifreli resmi (.png) ve meta veriyi (.meta) tek bir Streamlit butonuyla 
-    ardışık olarak indirmek için JavaScript/HTML kodu üretir.
-    """
-    if not enc_bytes or not meta_bytes:
-        return 
-
-    enc_filename = f"{base_name}_encrypted.png"
-    meta_filename = f"{base_name}_encrypted.meta"
-
-    # Byte dizilerini Base64'e dönüştürme
-    enc_base64 = base64.b64encode(enc_bytes).decode('utf-8')
-    meta_base64 = base64.b64encode(meta_bytes).decode('utf-8')
-
-    # CSS ve JS kodu (Streamlit butonu yerine HTML/JS kullanılıyor)
-    js_code = f"""
-    <script>
-    function b64toBlob(b64Data, contentType='') {{
-        const sliceSize = 512;
-        const byteCharacters = atob(b64Data);
-        const byteArrays = [];
-
-        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {{
-            const slice = byteCharacters.slice(offset, offset + sliceSize);
-            const byteNumbers = new Array(slice.length);
-            for (let i = 0; i < slice.length; i++) {{
-                byteNumbers[i] = slice.charCodeAt(i);
-            }}
-            const byteArray = new Uint8Array(byteNumbers);
-            byteArrays.push(byteArray);
-        }}
-        return new Blob(byteArrays, {{type: contentType}});
-    }}
-
-    function downloadFile(blob, filename) {{
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        // İndirme işlemini tetikle
-        a.click();
-        // Geçici URL'i temizle
-        URL.revokeObjectURL(url);
-    }}
-
-    function downloadBothFiles() {{
-        const encBlob = b64toBlob('{enc_base64}', 'image/png');
-        // Meta veriyi JSON olarak işaretliyoruz
-        const metaBlob = b64toBlob('{meta_base64}', 'application/json');
-
-        // 1. PNG'yi indir
-        downloadFile(encBlob, '{enc_filename}');
-
-        // 2. Meta veriyi indir (Çakışmayı önlemek için küçük bir gecikme)
-        // NOTE: Tarayıcıların ardışık indirmeleri bloklamaması için ufak bir gecikme bırakmak faydalıdır.
-        setTimeout(() => {{
-            downloadFile(metaBlob, '{meta_filename}');
-        }}, 500);
-    }}
-    </script>
-    """
-    
-    # Buton HTML'i (Streamlit görünümüne uygun hale getirildi)
-    button_html = f"""
-    <button 
-        onclick="downloadBothFiles()" 
-        style="
-            background-color: #1c5ac6; 
-            color: white; 
-            padding: 10px 20px; 
-            border-radius: 8px; 
-            font-weight: bold; 
-            border: none;
-            cursor: pointer;
-            width: 100%;
-            transition: background-color 0.2s ease;
-        "
-        onmouseover="this.style.backgroundColor='#184da3'"
-        onmouseout="this.style.backgroundColor='#1c5ac6'"
-    >
-        🖼️ PNG ve Meta Veriyi İndir (Tek Tık)
-    </button>
-    """
-    
-    # HTML ile birlikte JS kodunu Streamlit'e gönder
-    st.markdown(js_code + button_html, unsafe_allow_html=True)
-
 # ----------------------------- Çekirdek (encrypt/decrypt) -----------------------------
 
 def encrypt_image_file(image_bytes, password, open_time_dt, secret_text, secret_key, allow_no_password, progress_bar):
@@ -362,7 +272,6 @@ def decrypt_image_in_memory(enc_image_bytes, password, open_time_str, image_hash
 
 # --- Sidebar (Kenar Çubuğu) ---
 with st.sidebar:
-    # DÜZELTME: use_column_width -> use_container_width
     st.image(create_sample_image_bytes(), use_container_width=True, caption="Örnek Resim Görünümü")
     
     st.subheader("Uygulama Kontrolü")
@@ -389,7 +298,7 @@ with st.sidebar:
             **Şifreleme:**
             1. `🔒 Şifrele` sekmesine gidin.
             2. Bir resim dosyası yükleyin ve ayarları yapın.
-            3. `Şifrele` butonuna basın ve `.png` ile `.meta` dosyalarını **Tek Tıkla İndirme Butonu** ile indirin.
+            3. `Şifrele` butonuna basın ve oluşan `.png` ile `.meta` dosyalarını **ayrı butonlarla** indirin.
             
             **Şifre Çözme:**
             1. `🔓 Çöz` sekmesinde iki dosyayı da yükleyin.
@@ -516,18 +425,35 @@ with tab_encrypt:
             
             if enc_bytes and meta_bytes:
                 log("Şifreleme tamamlandı. Dosyalar indirilmeye hazır.")
-                st.success("Şifreleme Başarılı! Lütfen her iki dosyayı da tek bir tıkla indirin.")
+                st.success("Şifreleme Başarılı! Lütfen her iki dosyayı da indirin.")
                 st.session_state.generated_enc_bytes = enc_bytes
                 st.session_state.generated_meta_bytes = meta_bytes
                 
                 base_name = os.path.splitext(uploaded_file.name)[0]
                 
-                # TEK TIKLA İNDİRME BUTONUNU GÖSTER
-                download_button_js(
-                    st.session_state.generated_enc_bytes,
-                    st.session_state.generated_meta_bytes,
-                    base_name
-                )
+                st.markdown("---")
+                st.subheader("İndirme Bağlantıları")
+                
+                # İstenen değişiklik: İndirme butonlarını ayırmak
+                col_png, col_meta = st.columns(2)
+                
+                with col_png:
+                    st.download_button(
+                        label="🖼️ Şifreli Resmi İndir (.png)",
+                        data=st.session_state.generated_enc_bytes,
+                        file_name=f"{base_name}_encrypted.png",
+                        mime="image/png",
+                        use_container_width=True
+                    )
+                with col_meta:
+                    st.download_button(
+                        label="🔑 Meta Veriyi İndir (.meta)",
+                        data=st.session_state.generated_meta_bytes,
+                        file_name=f"{base_name}_encrypted.meta",
+                        mime="application/json",
+                        use_container_width=True
+                    )
+                
             else:
                 log("Şifreleme başarısız.")
                 st.error("Şifreleme sırasında bir hata oluştu. Logları kontrol edin.")
@@ -720,7 +646,6 @@ with tab_decrypt:
             caption = "Çözülmüş Görüntü (Orijinal)"
 
         if image_to_show:
-            # DÜZELTME: use_column_width -> use_container_width
             st.image(image_to_show, caption=caption, use_container_width=True)
             
             img_byte_arr = io.BytesIO()
