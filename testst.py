@@ -52,8 +52,7 @@ def log(text):
     st.session_state['log'] = f"[{ts}] {text}\n" + st.session_state['log']
 
 def normalize_time(t):
-    # Streamlit'in datetime_input'u zaten datetime objesi verir, ancak meta'ya yazmak için
-    # DÜZELTME: Bu fonksiyon, artık sadece datetime objelerini formatlamalı.
+    # Meta veriye yazarken saati ve dakikayı formatlar.
     return t.strftime("%Y-%m-%d %H:%M") if isinstance(t, datetime.datetime) else str(t)
 
 def hash_image_content(img: Image.Image) -> str:
@@ -163,7 +162,8 @@ def encrypt_image_file(image_bytes, password, open_time_dt, secret_text, secret_
     
     # Şifreleme için kullanılacak hash'leri oluştur
     image_hash = hash_image_content(img)
-    open_time_str = normalize_time(open_time_dt)
+    # Sadece YYYY-MM-DD HH:MM formatı kullanılır. Saniye bilgisi atlanır.
+    open_time_str = normalize_time(open_time_dt) 
     
     # Anahtar ve Anahtar Akışı oluştur
     key_hex = generate_key(password, open_time_str, image_hash)
@@ -312,7 +312,7 @@ with tab_encrypt:
         st.markdown("---")
         st.markdown("**2. Açılma Zamanı Ayarı**")
 
-        # KRİTİK DÜZELTME 1: st.time_input yerine serbest metin girişi
+        # Serbest metin girişi ile saat/dakika ayarı
         col_date, col_time = st.columns(2)
         
         min_date = datetime.datetime.now().date()
@@ -340,6 +340,7 @@ with tab_encrypt:
             hour, minute = map(int, enc_time_str.split(':'))
             if 0 <= hour <= 23 and 0 <= minute <= 59:
                 enc_time_val = datetime.time(hour, minute, 0)
+                # Açılma zamanını oluştururken saniye 0 olarak ayarlanır.
                 enc_time = datetime.datetime.combine(enc_date, enc_time_val)
                 time_format_valid = True
             else:
@@ -360,7 +361,7 @@ with tab_encrypt:
             st.stop()
             
         # Zaman kontrolü: Seçilen zaman geçmişte olmamalı
-        if enc_time <= datetime.datetime.now():
+        if enc_time <= datetime.datetime.now().replace(second=0, microsecond=0):
             st.error("Açılma zamanı şu anki zamandan ileri bir tarih/saat olmalıdır.")
             log("Hata: Geçmiş zaman seçimi.")
             st.stop()
@@ -375,8 +376,11 @@ with tab_encrypt:
             # Şifresiz açılmaya izin veriliyorsa şifreyi boş bırak
             pw_to_use = "" if enc_no_pass else enc_pass
             
+            # Açılma zamanı meta verisine sadece saat ve dakika (saniye 0) yazılır.
+            enc_time_for_meta = enc_time.replace(second=0, microsecond=0)
+            
             enc_bytes, meta_bytes = encrypt_image_file(
-                image_bytes, pw_to_use, enc_time, 
+                image_bytes, pw_to_use, enc_time_for_meta, 
                 enc_secret_text, enc_secret_key, enc_no_pass,
                 progress_bar
             )
@@ -449,13 +453,17 @@ with tab_decrypt:
                 ot_dt = datetime.datetime.strptime(open_time_str, "%Y-%m-%d %H:%M")
                 
                 now = datetime.datetime.now()
-                is_open = "🔓 AÇILABİLİR" if now >= ot_dt else "🔒 KİLİTLİ"
-                color = "green" if now >= ot_dt else "red"
+                # Açılma kontrolü için saniyeleri sıfırla, böylece HH:MM anında açılabilir.
+                now_check = now.replace(second=0, microsecond=0)
+                
+                is_open = "🔓 AÇILABİLİR" if now_check >= ot_dt else "🔒 KİLİTLİ"
+                color = "green" if now_check >= ot_dt else "red"
 
                 # Kalan süreyi hesapla ve göster
-                if now < ot_dt:
+                if now_check < ot_dt:
                     time_left = ot_dt - now
-                    # KRİTİK DÜZELTME 2: Kalan süre hesaplama (Zaten doğruydu, sadece gösterim formatı)
+                    
+                    # Hesaplama: Gün, saat, dakika ve saniye
                     days = time_left.days
                     total_seconds = int(time_left.total_seconds())
                     hours = total_seconds // 3600
@@ -467,9 +475,17 @@ with tab_decrypt:
                     if days > 0: parts.append(f"**{days} gün**")
                     if hours > 0: parts.append(f"**{hours} saat**")
                     if minutes > 0: parts.append(f"**{minutes} dakika**")
-                    parts.append(f"**{seconds} saniye**") # Saniyeyi her zaman göster
+                    # Saniyeyi her zaman göster (veya sadece kalan saniye 60'tan azsa)
+                    if days == 0 and hours == 0 and minutes == 0:
+                         parts.append(f"**{seconds} saniye**")
+                    elif seconds > 0:
+                         parts.append(f"**{seconds} saniye**")
+                         
                     
-                    time_left_str = "Kalan Süre: " + ", ".join(parts)
+                    if not parts:
+                        time_left_str = "Açılma zamanı saniyeler içinde bekleniyor..."
+                    else:
+                        time_left_str = "Kalan Süre: " + ", ".join(parts)
                 else:
                     time_left_str = "Açılma zamanı geldi/geçti."
 
@@ -514,8 +530,10 @@ with tab_decrypt:
                     # 1. Zaman kontrolü
                     now = datetime.datetime.now()
                     ot_dt = datetime.datetime.strptime(open_time_str, "%Y-%m-%d %H:%M")
+                    # Kontrol yaparken saniyeleri sıfırlıyoruz.
+                    now_check = now.replace(second=0, microsecond=0)
                     
-                    if now < ot_dt:
+                    if now_check < ot_dt:
                         log("Hata: Henüz zamanı gelmedi.")
                         # Zaman farkını hesapla ve göster (Tekrar hesaplama, çünkü form submit edildi)
                         time_left = ot_dt - now
