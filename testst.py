@@ -363,7 +363,7 @@ def decrypt_image_in_memory(enc_image_bytes, password, open_time_str, image_hash
 
 # --- Sidebar (Kenar Çubuğu) ---
 with st.sidebar:
-    # UYARI DÜZELTME: use_column_width -> use_container_width
+    # DÜZELTME: use_column_width -> use_container_width
     st.image(create_sample_image_bytes(), use_container_width=True, caption="Örnek Resim Görünümü")
     
     st.subheader("Uygulama Kontrolü")
@@ -486,7 +486,7 @@ with tab_encrypt:
             st.error("Lütfen saati **HH:MM** formatında doğru girin. (Örn: 14:30)")
 
 
-        # KRİTİK DÜZELTME: st.form_submit_button kullanıldı.
+        # KRİTİK DÜZELTME: st.button yerine st.form_submit_button kullanıldı.
         submitted = st.form_submit_button("🔒 Şifrele", use_container_width=True)
 
     if submitted:
@@ -633,7 +633,8 @@ with tab_decrypt:
         col_dec_btn, col_res_btn = st.columns([2, 1])
 
         with col_dec_btn:
-            if st.button("🔓 Çöz", use_container_width=True): # UYARI DÜZELTME: use_column_width -> use_container_width
+            # DÜZELTME: use_column_width -> use_container_width
+            if st.button("🔓 Çöz", use_container_width=True): 
                 # Çözme butonuna basıldığında tüm görsel ve mesaj durumlarını sıfırla
                 for k in ['decrypted_image', 'watermarked_image', 'is_message_visible', 'prompt_secret_key']:
                     st.session_state[k] = None
@@ -716,8 +717,9 @@ with tab_decrypt:
         
         with col_res_btn:
             # Temizle butonu artık tüm girdileri resetliyor.
+            # DÜZELTME: use_column_width -> use_container_width
             # NOTE: on_click'te st.rerun() çağırma uyarısını düzeltmek için st.rerun() kaldırıldı ve reset_all_inputs'a ufak bir bekleme eklendi.
-            st.button("🗑️ Temizle", on_click=reset_all_inputs, use_container_width=True, help="Şifrele ve Çöz sekmelerindeki tüm yüklenen dosyaları, şifreleri ve sonuçları siler.") # UYARI DÜZELTME: use_column_width -> use_container_width
+            st.button("🗑️ Temizle", on_click=reset_all_inputs, use_container_width=True, help="Şifrele ve Çöz sekmelerindeki tüm yüklenen dosyaları, şifreleri ve sonuçları siler.") 
 
     with col2:
         st.subheader("Önizleme")
@@ -733,7 +735,7 @@ with tab_decrypt:
             caption = "Çözülmüş Görüntü (Orijinal)"
 
         if image_to_show:
-            # UYARI DÜZELTME: use_column_width -> use_container_width
+            # DÜZELTME: use_column_width -> use_container_width
             st.image(image_to_show, caption=caption, use_container_width=True)
             
             img_byte_arr = io.BytesIO()
@@ -754,14 +756,16 @@ with tab_decrypt:
         if st.session_state.decrypted_image is not None and st.session_state.hidden_message:
             
             if st.session_state.is_message_visible:
-                if st.button("Gizli Mesajı Gizle", use_container_width=True): # UYARI DÜZELTME: use_column_width -> use_container_width
+                # DÜZELTME: use_column_width -> use_container_width
+                if st.button("Gizli Mesajı Gizle", use_container_width=True): 
                     log("Gizli mesaj gizlendi.")
                     st.session_state.is_message_visible = False
                     st.session_state.prompt_secret_key = False
                     st.session_state.watermarked_image = None
                     st.rerun()
             else:
-                if st.button("Gizli Mesajı Göster", use_container_width=True): # UYARI DÜZELTME: use_column_width -> use_container_width
+                # DÜZELTME: use_column_width -> use_container_width
+                if st.button("Gizli Mesajı Göster", use_container_width=True): 
                     if st.session_state.secret_key_hash:
                         log("Gizli mesaj şifresi isteniyor...")
                         st.session_state.prompt_secret_key = True
@@ -782,6 +786,8 @@ with tab_decrypt:
             with st.form("secret_key_form"):
                 # Giriş değerini session state'ten alarak sıfırlama özelliğini destekliyoruz
                 entered_key = st.text_input("Gizli Mesaj Şifresi", type="password", key="modal_pass", value=st.session_state.modal_pass)
+                
+                # KRİTİK DÜZELTME: st.button yerine st.form_submit_button kullanıldı.
                 submit_key = st.form_submit_button("Onayla")
                 
             if submit_key:
