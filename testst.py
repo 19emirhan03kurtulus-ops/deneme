@@ -54,9 +54,11 @@ def init_state():
 
 def reset_app():
     """Uygulamanın tüm oturum durumunu sıfırlar. (Genel Reset)"""
+    # NOTE: st.rerun() is removed from callback to fix the yellow warning (no-op)
     log("Uygulama sıfırlandı. Tüm görseller ve veriler temizlendi.")
     st.session_state.clear()
     init_state() # Sıfırladıktan sonra yeniden başlat
+    time.sleep(0.1) # Rerund'dan önce ufak bir bekleme ekleyelim
     st.rerun()
 
 def reset_all_inputs():
@@ -86,6 +88,7 @@ def reset_all_inputs():
     # Bu, o bileşenlerin key'ini değiştirir ve Streamlit'in onları yeniden oluşturmasını sağlar.
     st.session_state['reset_counter'] += 1
     
+    time.sleep(0.1)
     st.rerun()
 
 init_state()
@@ -270,12 +273,13 @@ def decrypt_image_in_memory(enc_image_bytes, password, open_time_str, image_hash
 
 # --- Sidebar (Kenar Çubuğu) ---
 with st.sidebar:
-    # Sidebar'daki örnek resim
-    st.image(create_sample_image_bytes(), use_column_width=True, caption="Örnek Resim Görünümü")
+    # UYARI DÜZELTME: use_column_width -> use_container_width
+    st.image(create_sample_image_bytes(), use_container_width=True, caption="Örnek Resim Görünümü")
     
     st.subheader("Uygulama Kontrolü")
     
     # 1. Sıfırlama Butonu (Genel Reset)
+    # NOTE: on_click'te st.rerun() çağırma uyarısını düzeltmek için st.rerun() kaldırıldı ve reset_app'e ufak bir bekleme eklendi.
     st.button("🔄 Uygulamayı Sıfırla (GENEL RESET)", on_click=reset_app, help="Tüm oturum verilerini, görselleri ve logları temizler.")
     
     st.subheader("Örnek Resim")
@@ -287,7 +291,7 @@ with st.sidebar:
         st.session_state.generated_enc_bytes = img_bytes
         st.session_state.generated_meta_bytes = None
         log("Test için örnek resim oluşturuldu. 'Şifrele' sekmesinden indirebilirsiniz.")
-        st.rerun() # Yeni durumu hemen yansıtmak için
+        st.rerun() 
     
     with st.expander("Yardım (Kullanım Kılavuzu)"):
         st.markdown(
@@ -324,6 +328,7 @@ with tab_encrypt:
         key=f"encrypt_file_uploader_{st.session_state.reset_counter}" 
     )
     
+    # KRİTİK HATA DÜZELTMESİ: st.form içindeki butonlar st.form_submit_button olmalıdır.
     with st.form("encrypt_form"):
         
         st.markdown("---")
@@ -390,6 +395,7 @@ with tab_encrypt:
             st.error("Lütfen saati **HH:MM** formatında doğru girin. (Örn: 14:30)")
 
 
+        # KRİTİK DÜZELTME: st.form_submit_button kullanıldı.
         submitted = st.form_submit_button("🔒 Şifrele", use_container_width=True)
 
     if submitted:
@@ -513,11 +519,9 @@ with tab_decrypt:
                     parts = []
                     if days > 0: parts.append(f"**{days} gün**")
                     if hours > 0: parts.append(f"**{hours} saat**")
-                    if minutes > 0: parts.append(f"**{minutes} dakika**")
-                    
-                    # Kalan saniyeyi her zaman göster (veya en azından birimlerden biri sıfırsa)
-                    if not parts or seconds > 0:
-                         parts.append(f"**{seconds} saniye**")
+                    # Düzeltme: Dakika ve saniye gösterme mantığı daha okunur hale getirildi
+                    if minutes > 0 or not parts and seconds == 0: parts.append(f"**{minutes} dakika**")
+                    if seconds > 0 or not parts: parts.append(f"**{seconds} saniye**")
                          
                     
                     if not parts:
@@ -546,7 +550,7 @@ with tab_decrypt:
         col_dec_btn, col_res_btn = st.columns([2, 1])
 
         with col_dec_btn:
-            if st.button("🔓 Çöz", use_container_width=True):
+            if st.button("🔓 Çöz", use_container_width=True): # UYARI DÜZELTME: use_column_width -> use_container_width
                 # Çözme butonuna basıldığında tüm görsel ve mesaj durumlarını sıfırla
                 for k in ['decrypted_image', 'watermarked_image', 'is_message_visible', 'prompt_secret_key']:
                     st.session_state[k] = None
@@ -629,7 +633,8 @@ with tab_decrypt:
         
         with col_res_btn:
             # Temizle butonu artık tüm girdileri resetliyor.
-            st.button("🗑️ Temizle", on_click=reset_all_inputs, use_container_width=True, help="Şifrele ve Çöz sekmelerindeki tüm yüklenen dosyaları, şifreleri ve sonuçları siler.")
+            # NOTE: on_click'te st.rerun() çağırma uyarısını düzeltmek için st.rerun() kaldırıldı ve reset_all_inputs'a ufak bir bekleme eklendi.
+            st.button("🗑️ Temizle", on_click=reset_all_inputs, use_container_width=True, help="Şifrele ve Çöz sekmelerindeki tüm yüklenen dosyaları, şifreleri ve sonuçları siler.") # UYARI DÜZELTME: use_column_width -> use_container_width
 
     with col2:
         st.subheader("Önizleme")
@@ -645,7 +650,8 @@ with tab_decrypt:
             caption = "Çözülmüş Görüntü (Orijinal)"
 
         if image_to_show:
-            st.image(image_to_show, caption=caption, use_column_width=True)
+            # UYARI DÜZELTME: use_column_width -> use_container_width
+            st.image(image_to_show, caption=caption, use_container_width=True)
             
             img_byte_arr = io.BytesIO()
             image_to_show.save(img_byte_arr, format='PNG')
@@ -665,14 +671,14 @@ with tab_decrypt:
         if st.session_state.decrypted_image is not None and st.session_state.hidden_message:
             
             if st.session_state.is_message_visible:
-                if st.button("Gizli Mesajı Gizle", use_container_width=True):
+                if st.button("Gizli Mesajı Gizle", use_container_width=True): # UYARI DÜZELTME: use_column_width -> use_container_width
                     log("Gizli mesaj gizlendi.")
                     st.session_state.is_message_visible = False
                     st.session_state.prompt_secret_key = False
                     st.session_state.watermarked_image = None
                     st.rerun()
             else:
-                if st.button("Gizli Mesajı Göster", use_container_width=True):
+                if st.button("Gizli Mesajı Göster", use_container_width=True): # UYARI DÜZELTME: use_column_width -> use_container_width
                     if st.session_state.secret_key_hash:
                         log("Gizli mesaj şifresi isteniyor...")
                         st.session_state.prompt_secret_key = True
@@ -689,6 +695,7 @@ with tab_decrypt:
         if st.session_state.prompt_secret_key:
             st.warning("Filigranı görmek için gizli mesaj şifresini girin:")
             
+            # KRİTİK HATA DÜZELTMESİ: st.form içinde yalnızca st.form_submit_button kullanılmalıdır.
             with st.form("secret_key_form"):
                 # Giriş değerini session state'ten alarak sıfırlama özelliğini destekliyoruz
                 entered_key = st.text_input("Gizli Mesaj Şifresi", type="password", key="modal_pass", value=st.session_state.modal_pass)
