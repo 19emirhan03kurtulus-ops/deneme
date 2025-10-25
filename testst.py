@@ -11,12 +11,12 @@ TURKISH_TZ = ZoneInfo("Europe/Istanbul")
 
 # ----------------------------- Ayarlar ve Başlık -----------------------------
 st.set_page_config(
-    page_title="Zamanlı Görsel Şifreleme (🇹🇷 Saat Ayarlı)",
+    page_title="Zamanlı Görsel Şifreleme (🇹🇷)",
     page_icon="🖼️",
     layout="wide"
 )
 
-st.title("🖼️ Zamanlı Görsel Şifreleme (🇹🇷 TR Saati ile)")
+st.title("🖼️ Zamanlı Görsel Şifreleme (🇹🇷)")
 
 # ----------------------------- Session State (Oturum Durumu) -----------------------------
 
@@ -759,3 +759,4 @@ with tab_decrypt:
                     # Yanlış şifre girildiğinde input alanını temizleyebiliriz
                     st.session_state.modal_pass = "" 
                     st.rerun()
+
