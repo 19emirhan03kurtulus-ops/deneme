@@ -1,5 +1,5 @@
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFont 
+from PIL import Image, ImageDraw, ImageFont
 import hashlib, datetime, random, os, json, io
 
 # ----------------------------- Ayarlar ve Başlık -----------------------------
@@ -53,6 +53,7 @@ def log(text):
 
 def normalize_time(t):
     # Streamlit'in datetime_input'u zaten datetime objesi verir, ancak meta'ya yazmak için
+    # DÜZELTME: Bu fonksiyon, artık sadece datetime objelerini formatlamalı.
     return t.strftime("%Y-%m-%d %H:%M") if isinstance(t, datetime.datetime) else str(t)
 
 def hash_image_content(img: Image.Image) -> str:
@@ -109,10 +110,12 @@ def add_text_watermark(img: Image.Image, hidden_message: str) -> Image.Image:
 
     # Köşe koordinatlarını ayarla (sağ alt köşe)
     padding = 15
+    # Metin genişliğini alırken padding'i de hesaba kat
     x = w - text_w - padding * 2 
     y = h - text_h - padding * 2
 
     # Yarı saydam siyah arka plan çiz
+    # Arka planın boyutunu metin boyutuna göre ayarla
     fill_color = (0, 0, 0, 180) # Siyah ve %70 opak
     draw.rectangle([x - padding, y - padding, x + text_w + padding, y + text_h + padding], fill=fill_color) 
     
@@ -306,17 +309,46 @@ with tab_encrypt:
         enc_secret_text = st.text_area("Gizli Mesaj (Meta veriye saklanır)", placeholder="Gizli notunuz...")
         enc_secret_key = st.text_input("Gizli Mesaj Şifresi (Filigranı görmek için)", type="password", placeholder="Filigranı açacak şifre")
         
-        min_date = datetime.datetime.now()
-        enc_time = st.datetime_input(
-            "Açılma Zamanı (Bu zamandan önce açılamaz)", 
-            # Varsayılan olarak 1 gün sonrası
-            value=min_date + datetime.timedelta(days=1, hours=1),
-            min_value=min_date
-        )
+        st.markdown("---")
+        st.markdown("**2. Açılma Zamanı Ayarı**")
+
+        # KRİTİK DÜZELTME: st.datetime_input yerine tarih ve saat girişleri
+        col_date, col_time = st.columns(2)
         
+        min_date = datetime.datetime.now().date()
+        
+        with col_date:
+            enc_date = st.date_input(
+                "Açılma Tarihi (YYYY-AA-GG)",
+                value=min_date + datetime.timedelta(days=1),
+                min_value=min_date
+            )
+
+        with col_time:
+            # Varsayılan saat olarak gün sonunu alabiliriz
+            enc_time_val = st.time_input(
+                "Açılma Saati (SS:DD)",
+                value=datetime.time(23, 59, 0) 
+            )
+
+        # datetime objesini oluştur
+        try:
+            enc_time = datetime.datetime.combine(enc_date, enc_time_val)
+        except Exception as e:
+            # Bu durumda genellikle hata oluşmaz, ancak hata yakalama iyi bir pratiktir
+            enc_time = datetime.datetime.now() + datetime.timedelta(days=1)
+            st.warning(f"Tarih/Saat birleştirme hatası: {e}. Varsayılan zaman kullanıldı.")
+
+
         submitted = st.form_submit_button("🔒 Şifrele", use_container_width=True)
 
     if submitted:
+        # Zaman kontrolü: Seçilen zaman geçmişte olmamalı
+        if enc_time <= datetime.datetime.now():
+            st.error("Açılma zamanı şu anki zamandan ileri bir tarih/saat olmalıdır.")
+            log("Hata: Geçmiş zaman seçimi.")
+            st.stop()
+            
         if uploaded_file is None:
             st.error("Lütfen önce bir resim dosyası yükleyin.")
         else:
@@ -404,14 +436,25 @@ with tab_decrypt:
                 is_open = "🔓 AÇILABİLİR" if now >= ot_dt else "🔒 KİLİTLİ"
                 color = "green" if now >= ot_dt else "red"
 
+                # Kalan süreyi hesapla ve göster
+                if now < ot_dt:
+                    time_left = ot_dt - now
+                    days = time_left.days
+                    hours, remainder = divmod(time_left.seconds, 3600)
+                    minutes, seconds = divmod(remainder, 60)
+                    time_left_str = f"Kalan Süre: **{days} gün, {hours} saat, {minutes} dakika**"
+                else:
+                    time_left_str = "Açılma zamanı geldi/geçti."
+
                 meta_data_placeholder.markdown(
                     f"**Açılma Zamanı Bilgisi:**\n\n"
-                    f"Bu dosya **<span style='color:{color}'>{open_time_str}</span>** tarihinde açılmak üzere ayarlanmıştır. Şu anki durumu: **{is_open}**", 
+                    f"Bu dosya **<span style='color:{color}'>{open_time_str}</span>** tarihinde açılmak üzere ayarlanmıştır. Şu anki durumu: **{is_open}**\n\n"
+                    f"{time_left_str}", 
                     unsafe_allow_html=True
                 )
                 
             except Exception as e:
-                meta_data_placeholder.error("Meta dosya okuma hatası.")
+                meta_data_placeholder.error("Meta dosya okuma hatası. Geçersiz dosya formatı olabilir.")
                 log(f"Meta dosya önizleme hatası: {e}")
 
         st.markdown("**2. Şifreyi Gir**")
@@ -428,7 +471,7 @@ with tab_decrypt:
             if not enc_file or not meta_file:
                 st.error("Lütfen hem şifreli .png hem de .meta dosyasını yükleyin.")
             elif not meta_data_available:
-                   st.error("Yüklenen meta dosyası geçerli bir JSON formatında değil.")
+                    st.error("Yüklenen meta dosyası geçerli bir JSON formatında değil.")
             else:
                 try:
                     # Meta verilerini al
