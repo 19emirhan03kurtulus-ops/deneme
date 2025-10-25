@@ -4,13 +4,12 @@ import hashlib, datetime, random, os, json, io
 # Saat dilimi işlemleri için gerekli kütüphaneler
 from zoneinfo import ZoneInfo
 import time 
-
 # Türkiye/İstanbul saat dilimi tanımı (UTC+3)
 TURKISH_TZ = ZoneInfo("Europe/Istanbul")
 
 # ----------------------------- Ayarlar ve Başlık -----------------------------
 st.set_page_config(
-    page_title="Zamanlı Görsel Şifreleme (🇹🇷 Saat Ayarlı)",
+    page_title="Zamanlı Görsel Şifreleme (🇹🇷)",
     page_icon="🖼️",
     layout="wide"
 )
@@ -626,3 +625,4 @@ with tab_decrypt:
         
         if st.session_state.is_message_visible and st.session_state.hidden_message:
             st.success(f"**GİZLİ MESAJ (MetaA Veri):**\n\n{st.session_state.hidden_message}")
+
