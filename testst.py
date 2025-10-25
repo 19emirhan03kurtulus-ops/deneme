@@ -312,7 +312,7 @@ with tab_encrypt:
         st.markdown("---")
         st.markdown("**2. Açılma Zamanı Ayarı**")
 
-        # KRİTİK DÜZELTME: st.datetime_input yerine tarih ve saat girişleri
+        # KRİTİK DÜZELTME 1: st.time_input yerine serbest metin girişi
         col_date, col_time = st.columns(2)
         
         min_date = datetime.datetime.now().date()
@@ -325,24 +325,40 @@ with tab_encrypt:
             )
 
         with col_time:
-            # Varsayılan saat olarak gün sonunu alabiliriz
-            enc_time_val = st.time_input(
-                "Açılma Saati (SS:DD)",
-                value=datetime.time(23, 59, 0) 
+            # Kullanıcının HH:MM formatında serbest saat girişi
+            enc_time_str = st.text_input(
+                "Açılma Saati (HH:MM formatında)",
+                value="00:00",
+                placeholder="Örn: 14:30"
             )
 
         # datetime objesini oluştur
+        enc_time = None
+        time_format_valid = False
         try:
-            enc_time = datetime.datetime.combine(enc_date, enc_time_val)
-        except Exception as e:
-            # Bu durumda genellikle hata oluşmaz, ancak hata yakalama iyi bir pratiktir
-            enc_time = datetime.datetime.now() + datetime.timedelta(days=1)
-            st.warning(f"Tarih/Saat birleştirme hatası: {e}. Varsayılan zaman kullanıldı.")
+            # HH:MM formatını datetime.time objesine dönüştür
+            hour, minute = map(int, enc_time_str.split(':'))
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                enc_time_val = datetime.time(hour, minute, 0)
+                enc_time = datetime.datetime.combine(enc_date, enc_time_val)
+                time_format_valid = True
+            else:
+                st.error("Saat/Dakika değerleri geçerli aralıkta değil.")
+                log("Hata: Geçersiz saat/dakika aralığı.")
+        except Exception:
+            st.error("Lütfen saati **HH:MM** formatında doğru girin. (Örn: 14:30)")
+            log("Hata: Geçersiz saat formatı.")
+            time_format_valid = False
 
 
         submitted = st.form_submit_button("🔒 Şifrele", use_container_width=True)
 
     if submitted:
+        # Zaman formatı geçerliyse ve submitted ise işleme devam et
+        if not time_format_valid:
+            st.warning("Lütfen zaman formatını düzeltin.")
+            st.stop()
+            
         # Zaman kontrolü: Seçilen zaman geçmişte olmamalı
         if enc_time <= datetime.datetime.now():
             st.error("Açılma zamanı şu anki zamandan ileri bir tarih/saat olmalıdır.")
@@ -439,10 +455,21 @@ with tab_decrypt:
                 # Kalan süreyi hesapla ve göster
                 if now < ot_dt:
                     time_left = ot_dt - now
+                    # KRİTİK DÜZELTME 2: Kalan süre hesaplama (Zaten doğruydu, sadece gösterim formatı)
                     days = time_left.days
-                    hours, remainder = divmod(time_left.seconds, 3600)
-                    minutes, seconds = divmod(remainder, 60)
-                    time_left_str = f"Kalan Süre: **{days} gün, {hours} saat, {minutes} dakika**"
+                    total_seconds = int(time_left.total_seconds())
+                    hours = total_seconds // 3600
+                    minutes = (total_seconds % 3600) // 60
+                    seconds = total_seconds % 60
+                    
+                    # Zamanın birimlerini sadece sıfırdan büyükse göster
+                    parts = []
+                    if days > 0: parts.append(f"**{days} gün**")
+                    if hours > 0: parts.append(f"**{hours} saat**")
+                    if minutes > 0: parts.append(f"**{minutes} dakika**")
+                    parts.append(f"**{seconds} saniye**") # Saniyeyi her zaman göster
+                    
+                    time_left_str = "Kalan Süre: " + ", ".join(parts)
                 else:
                     time_left_str = "Açılma zamanı geldi/geçti."
 
@@ -490,12 +517,14 @@ with tab_decrypt:
                     
                     if now < ot_dt:
                         log("Hata: Henüz zamanı gelmedi.")
-                        # Zaman farkını hesapla ve göster
+                        # Zaman farkını hesapla ve göster (Tekrar hesaplama, çünkü form submit edildi)
                         time_left = ot_dt - now
-                        hours, remainder = divmod(time_left.seconds, 3600)
-                        minutes, seconds = divmod(remainder, 60)
+                        days = time_left.days
+                        total_seconds = int(time_left.total_seconds())
+                        hours = total_seconds // 3600
+                        minutes = (total_seconds % 3600) // 60
                         
-                        st.warning(f"Bu dosyanın açılmasına daha var. \n\nAçılma Zamanı: **{open_time_str}**\nKalan Süre: **{time_left.days} gün, {hours} saat, {minutes} dakika**")
+                        st.warning(f"Bu dosyanın açılmasına daha var. \n\nAçılma Zamanı: **{open_time_str}**\nKalan Süre: **{days} gün, {hours} saat, {minutes} dakika**")
                     else:
                         # 2. Şifre kontrolü
                         pw_to_use = "" if allow_no else dec_pass
