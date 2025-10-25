@@ -403,12 +403,13 @@ with tab_encrypt:
         if uploaded_file is None:
             st.error("Lütfen önce bir resim dosyası yükleyin.")
         else:
-            # Kullanıcının girdiği son değerleri session_state'e kaydet
-            st.session_state.enc_pass_input = enc_pass
-            st.session_state.enc_no_pass_checkbox = enc_no_pass
-            st.session_state.enc_secret_text_input = enc_secret_text
-            st.session_state.enc_secret_key_input = enc_secret_key
-            st.session_state.enc_time_str = enc_time_str
+            # HATA DÜZELTMESİ: Form içindeki input'lar zaten Session State'i güncellediği için, 
+            # bu atamalar kaldırılmıştır. Tekrar atama yapmak StreamlitAPIException hatasına neden oluyordu.
+            # st.session_state.enc_pass_input = enc_pass 
+            # st.session_state.enc_no_pass_checkbox = enc_no_pass
+            # st.session_state.enc_secret_text_input = enc_secret_text
+            # st.session_state.enc_secret_key_input = enc_secret_key
+            # st.session_state.enc_time_str = enc_time_str
             
             log("Şifreleme başlatıldı...")
             progress_bar = st.progress(0, text="Başlatılıyor...")
