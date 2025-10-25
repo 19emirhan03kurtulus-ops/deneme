@@ -39,8 +39,8 @@ init_state()
 def log(text):
     """Streamlit için loglama fonksiyonu. Logları session_state'e ekler."""
     ts = datetime.datetime.now().strftime("%H:%M:%S")
-    # Yazım hatası düzeltildi: st.session_session_state yerine st.session_state kullanıldı.
-    st.session_state.log = f"[{ts}] {text}\n" + st.session_state.log # Yeni loglar üste gelsin
+    # Yazım hatası düzeltildi (st.session_state): Bu önceki hataydı ve çözüldü.
+    st.session_state.log = f"[{ts}] {text}\n" + st.session_state.log
 
 def normalize_time(t):
     # Streamlit'in datetime_input'u zaten datetime objesi verir, ancak meta'ya yazmak için
@@ -74,19 +74,28 @@ def add_text_watermark(img: Image.Image, hidden_message: str) -> Image.Image:
     
     try:
         # Streamlit sunucularında font bulmak zor olabilir, varsayılana güvenmek daha iyi
-        font = ImageFont.load_default().font_variant(size=24)
+        # Windows/Linux ortamlarında farklı font yükleme sorunlarını gidermek için varsayılana geri dönüldü
+        font = ImageFont.load_default()
+        # Deneme: Biraz daha büyük bir font kullanmaya çalış
+        try:
+            font = ImageFont.load_default().font_variant(size=24)
+        except:
+             font = ImageFont.load_default()
+        
     except IOError:
         font = ImageFont.load_default()
         
     text_color = (255, 0, 0, 255)
     
+    # Text boyutunu doğru hesaplamak için uyumluluk kontrolü
     try:
         bbox = draw.textbbox((0, 0), full_text, font=font, anchor="ls")
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
     except AttributeError:
         # Eski PIL versiyonları için fallback
-        text_w, text_h = draw.textlength(full_text, font=font), 24 * len(text_lines)
+        text_w = draw.textlength(full_text, font=font) if hasattr(draw, 'textlength') else len(full_text) * 12 # Tahmini genişlik
+        text_h = 24 * len(text_lines)
 
     x = w - text_w - 20
     y = h - text_h - 20
@@ -203,13 +212,14 @@ def decrypt_image_in_memory(enc_image_bytes, password, open_time_str, image_hash
 
 # --- Sidebar (Kenar Çubuğu) ---
 with st.sidebar:
-    st.image(create_sample_image_bytes(), use_column_width=True, caption="Örnek Resim Görünümü")
+    # UYARI ÇÖZÜMÜ: use_column_width=True yerine use_container_width=True kullanıldı
+    st.image(create_sample_image_bytes(), use_container_width=True, caption="Örnek Resim Görünümü")
     
     st.subheader("Örnek Resim")
     st.info("Test için hızlıca bir resim oluşturun ve şifreleme sekmesinden indirin.")
     
     # Örnek resim oluşturma ve indirme butonu
-    if st.button("Örnek Resim Oluştur"):
+    if st.button("Örnek Resim Oluştur", key="sidebar_sample_btn"):
         img_bytes = create_sample_image_bytes()
         st.session_state.generated_enc_bytes = img_bytes # Şifreleme sekmesinde göstermek için
         st.session_state.generated_meta_bytes = None # Meta yok
@@ -247,6 +257,9 @@ tab_encrypt, tab_decrypt = st.tabs(["🔒 Şifrele", "🔓 Çöz"])
 with tab_encrypt:
     st.subheader("Yeni Bir Görseli Şifrele")
     
+    # min_date hesaplaması formun dışında tutuldu. Bu, AttributeError'u azaltabilir.
+    min_date = datetime.datetime.now()
+
     with st.form("encrypt_form"):
         uploaded_file = st.file_uploader(
             "1. Şifrelenecek resmi seçin", 
@@ -262,11 +275,14 @@ with tab_encrypt:
         enc_secret_text = st.text_area("Gizli Mesaj (Meta veriye saklanır)", placeholder="Gizli notunuz...")
         enc_secret_key = st.text_input("Gizli Mesaj Şifresi (Filigranı görmek için)", type="password", placeholder="Filigranı açacak şifre")
         
-        min_date = datetime.datetime.now()
+        # AttributeError veren datetime_input. min_value zaten formun dışında tanımlı,
+        # bu durumun AttributeError'a neden olmaması gerekir, ancak yine de formu temizlemek 
+        # için yeniden düzenlendi ve min_value'nun doğru olduğundan emin olundu.
         enc_time = st.datetime_input(
             "Açılma Zamanı (Bu zamandan önce açılamaz)", 
             value=min_date + datetime.timedelta(days=1),
-            min_value=min_date
+            min_value=min_date,
+            key="encryption_time_input" # Açık anahtar eklendi
         )
         
         submitted = st.form_submit_button("🔒 Şifrele", use_container_width=True)
@@ -371,9 +387,9 @@ with tab_decrypt:
         st.markdown("**2. Şifreyi Gir**")
         dec_pass = st.text_input("Görsel Şifresi (gerekliyse)", type="password", key="decrypt_pass")
         
-        # Hata izleğinde bu butonun eksikliği yok, ancak formun dışında olabilir. 
-        # Çözme butonu, tüm formun submit butonu gibi davranır.
-        if st.button("🔓 Çöz", use_container_width=True):
+        # 'Çöz' butonu form dışında, bu nedenle Missing Submit Button hatasına neden olmaz.
+        # Bu, her etkileşimde sayfayı yeniden çalıştırır.
+        if st.button("🔓 Çöz", use_container_width=True, key="decrypt_button"):
             # Çözme butonuna basıldığında tüm durumları sıfırla (log hariç)
             for k in ['decrypted_image', 'watermarked_image', 'is_message_visible', 'prompt_secret_key']:
                 st.session_state[k] = None
@@ -427,7 +443,6 @@ with tab_decrypt:
                                 if calc_tag != stored_tag:
                                     log("Doğrulama başarısız: Yanlış şifre veya bozuk dosya.")
                                     st.error("Çözme Hatası: Yanlış şifre girildi veya dosyalar bozulmuş.")
-                                    # init_state() # Hata durumunda her şeyi temizlemiyoruz ki, diğer bilgiler korunsun
                                     st.session_state.decrypted_image = None
                                 else:
                                     log("Doğrulama başarılı! Resim çözüldü.")
@@ -455,7 +470,8 @@ with tab_decrypt:
 
         # Resmi göster
         if image_to_show:
-            st.image(image_to_show, caption=caption, use_column_width=True)
+            # UYARI ÇÖZÜMÜ: use_column_width=True yerine use_container_width=True kullanıldı
+            st.image(image_to_show, caption=caption, use_container_width=True)
             
             # Çözülmüş resmi indirme butonu
             img_byte_arr = io.BytesIO()
@@ -501,20 +517,25 @@ with tab_decrypt:
                         st.session_state.is_message_visible = True
                         st.rerun()
 
-        # 2. Gizli mesaj şifresi sorma alanı (customtkinter'daki 'SecretKeyDialog' yerine)
+        # 2. Gizli mesaj şifresi sorma alanı (Missing Submit Button hatasının ana kaynağı)
         if st.session_state.prompt_secret_key:
             st.warning("Filigranı görmek için gizli mesaj şifresini girin:")
             
-            # Burada formu oluşturduk
-            with st.form("secret_key_form"):
-                entered_key = st.text_input("Gizli Mesaj Şifresi", type="password", key="modal_pass")
-                # Hatanın kaynağı burası olabilir, açık bir key ile yeniden tanımlandı.
-                submit_key = st.form_submit_button("Onayla", key="secret_key_submit")
-                
+            # HATA ÇÖZÜMÜ: Formu tutarlı hale getirmek için, küçük formu 
+            # dinamik olarak göstermek yerine bir container içine aldık ve butona key atadık.
+            with st.container():
+                with st.form("secret_key_form", clear_on_submit=False):
+                    entered_key = st.text_input("Gizli Mesaj Şifresi", type="password", key="modal_pass")
+                    
+                    # Missing Submit Button hatasını gidermek için formun içine butonu ekledik
+                    submit_key = st.form_submit_button("Onayla", key="secret_key_submit", use_container_width=True)
+                    
             if submit_key:
                 entered_hash = hashlib.sha256(entered_key.encode('utf-8')).hexdigest()
                 if entered_hash == st.session_state.secret_key_hash:
                     log("Gizli mesaj şifresi doğru. Filigran gösteriliyor.")
+                    
+                    # Mesajı doğru key ile çözdükten sonra görünür hale getir
                     st.session_state.watermarked_image = add_text_watermark(
                         st.session_state.decrypted_image, 
                         st.session_state.hidden_message
