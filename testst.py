@@ -14,8 +14,7 @@ st.title("🖼️ Zamanlı Görsel Şifreleme (Streamlit)")
 # ----------------------------- Session State (Oturum Durumu) -----------------------------
 def init_state():
     """Tüm oturum durumlarını başlatır ve varsayılanları atar."""
-    # datetime_input hatasını çözmek için kararlı bir başlangıç değeri ekliyoruz.
-    # Bu, sayfanın her yeniden çalışmasında aynı ilk değeri korur.
+    # Kararlı başlangıç değeri: Şu andan bir gün sonrası (Streamlit'in None hatasını önlemek için)
     default_open_time = datetime.datetime.now() + datetime.timedelta(days=1)
     
     defaults = {
@@ -45,8 +44,10 @@ def log(text):
     st.session_state.log = f"[{ts}] {text}\n" + st.session_state.log
 
 def normalize_time(t):
-    # Streamlit'in datetime_input'u zaten datetime objesi verir
-    return t.strftime("%Y-%m-%d %H:%M") if isinstance(t, datetime.datetime) else str(t)
+    # Streamlit'in datetime_input'u zaten datetime objesi verir, None kontrolü ekleniyor
+    if isinstance(t, datetime.datetime):
+        return t.strftime("%Y-%m-%d %H:%M")
+    return "" # Güvenli dönüş
 
 def hash_image_content(img: Image.Image) -> str:
     return hashlib.sha256(img.tobytes()).hexdigest()
@@ -69,33 +70,33 @@ def add_text_watermark(img: Image.Image, hidden_message: str) -> Image.Image:
         return img 
 
     text_lines = [
-        "*** GİZLİ MESAJ ***",
+        "*** GİZLİ MESAJ (FILIGRAN) ***",
         f"{hidden_message}"
     ]
     full_text = "\n".join(text_lines)
     
+    # Font yükleme denemesi
     try:
-        font = ImageFont.load_default()
+        font_path = "arial.ttf" # Sistemin varsayılan fontunu kullanmayı deneyin
+        font = ImageFont.truetype(font_path, 30)
+    except IOError:
         try:
-            # Daha okunur olması için boyutu artırıyoruz
+             # Eğer arial yoksa varsayılanı kullan
             font = ImageFont.load_default().font_variant(size=30)
         except:
              font = ImageFont.load_default()
-    except IOError:
-        font = ImageFont.load_default()
         
     text_color = (255, 0, 0, 255)
     
     # Text boyutunu hesapla
     try:
-        # textbbox kullanmak PIL'in yeni versiyonları için daha doğru
         bbox = draw.textbbox((0, 0), full_text, font=font, anchor="ls")
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
     except AttributeError:
-        # Eski PIL versiyonları için basit bir tahmin
-        text_w = draw.textlength(full_text, font=font) if hasattr(draw, 'textlength') else len(full_text) * 16 
-        text_h = 30 * len(text_lines)
+        # Eski PIL versiyonları veya font hatası için
+        text_w = 400 
+        text_h = 60
 
     x = w - text_w - 20
     y = h - text_h - 20
@@ -126,6 +127,13 @@ def create_sample_image_bytes():
 
 def encrypt_image_file(image_bytes, password, open_time_dt, secret_text, secret_key, allow_no_password, progress_bar):
     """Şifreleme işlemini yapar."""
+    
+    # NONE HATASI İÇİN KATI KONTROL
+    if open_time_dt is None:
+        log("Hata: Açılma zamanı None olarak geldi. İşlem durduruldu.")
+        st.error("Şifreleme sırasında kritik hata: Geçerli bir açılma zamanı alınamadı.")
+        return None, None
+
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     except Exception as e:
@@ -256,34 +264,42 @@ with tab_encrypt:
     with st.form("encrypt_form"):
         uploaded_file = st.file_uploader(
             "1. Şifrelenecek resmi seçin", 
-            type=["png", "jpg", "jpeg", "bmp"]
+            type=["png", "jpg", "jpeg", "bmp"],
+            key="enc_file_uploader" # Yeni key eklendi
         )
         
         st.markdown("---")
         st.markdown("**Şifreleme Ayarları**")
         
-        enc_pass = st.text_input("Görsel Şifresi (Çözme için)", type="password")
-        enc_no_pass = st.checkbox("Şifresiz açılmaya izin ver (Sadece zaman kilidi)")
+        enc_pass = st.text_input("Görsel Şifresi (Çözme için)", type="password", key="enc_pass_input")
+        enc_no_pass = st.checkbox("Şifresiz açılmaya izin ver (Sadece zaman kilidi)", key="enc_no_pass_checkbox")
         
-        enc_secret_text = st.text_area("Gizli Mesaj (Meta veriye saklanır)", placeholder="Gizli notunuz...")
-        enc_secret_key = st.text_input("Gizli Mesaj Şifresi (Filigranı görmek için)", type="password", placeholder="Filigranı açacak şifre")
+        enc_secret_text = st.text_area("Gizli Mesaj (Meta veriye saklanır)", placeholder="Gizli notunuz...", key="enc_secret_text_area")
+        enc_secret_key = st.text_input("Gizli Mesaj Şifresi (Filigranı görmek için)", type="password", placeholder="Filigranı açacak şifre", key="enc_secret_key_input")
         
-        # HATA ÇÖZÜMÜ: datetime_input'un value'sunu session state'ten alarak 
-        # sayfanın yeniden çalışması (rerun) sırasındaki kararsızlığı gideriyoruz.
-        enc_time = st.datetime_input(
-            "Açılma Zamanı (Bu zamandan önce açılamaz)", 
-            value=st.session_state.encryption_start_time,
-            min_value=min_date,
-            key="encryption_time_input" 
-        )
+        # HATA ÇÖZÜMÜ: datetime_input'un kararsızlığını gidermek için try/except bloğu eklendi.
+        try:
+            enc_time = st.datetime_input(
+                "Açılma Zamanı (Bu zamandan önce açılamaz)", 
+                value=st.session_state.encryption_start_time,
+                min_value=min_date,
+                key="encryption_time_input" 
+            )
+        except AttributeError:
+             # Eğer hata alırsa, kararlı başlangıç değerini kullan
+             enc_time = st.session_state.encryption_start_time
+        
         # Kullanıcı değeri değiştirdiğinde, kararlı değeri de güncelleyelim.
-        st.session_state.encryption_start_time = enc_time
+        if enc_time is not None:
+             st.session_state.encryption_start_time = enc_time
         
-        submitted = st.form_submit_button("🔒 Şifrele", use_container_width=True)
+        submitted = st.form_submit_button("🔒 Şifrele", use_container_width=True, key="enc_submit_button")
 
     if submitted:
         if uploaded_file is None:
             st.error("Lütfen önce bir resim dosyası yükleyin.")
+        elif enc_time is None:
+             st.error("Lütfen geçerli bir açılma zamanı seçin.")
         else:
             log("Şifreleme başlatıldı...")
             progress_bar = st.progress(0, text="Başlatılıyor...")
@@ -311,25 +327,29 @@ with tab_encrypt:
                     label="1. Şifreli Resmi (.png) İndir",
                     data=st.session_state.generated_enc_bytes,
                     file_name=enc_filename,
-                    mime="image/png"
+                    mime="image/png",
+                    key="download_enc_button"
                 )
                 st.download_button(
                     label="2. Meta Dosyasını (.meta) İndir",
                     data=st.session_state.generated_meta_bytes,
                     file_name=meta_filename,
-                    mime="application/json"
+                    mime="application/json",
+                    key="download_meta_button"
                 )
             else:
                 log("Şifreleme başarısız.")
                 st.error("Şifreleme sırasında bir hata oluştu. Logları kontrol edin.")
     
+    # Örnek resim indirme butonu, sadece meta_bytes yoksa göster
     elif st.session_state.generated_enc_bytes and not st.session_state.generated_meta_bytes:
         st.info("Kenar çubuğunda oluşturulan örnek resmi indirin.")
         st.download_button(
             label="Örnek Resmi İndir",
             data=st.session_state.generated_enc_bytes,
             file_name="sample_for_encrypt.png",
-            mime="image/png"
+            mime="image/png",
+            key="download_sample_button"
         )
 
 
@@ -343,13 +363,14 @@ with tab_decrypt:
 
     with col1:
         st.markdown("**1. Dosyaları Yükle**")
-        enc_file = st.file_uploader("Şifreli resmi (.png) seçin", type="png")
-        meta_file = st.file_uploader("Meta dosyasını (.meta) seçin", type="meta")
+        enc_file = st.file_uploader("Şifreli resmi (.png) seçin", type="png", key="dec_enc_file_uploader")
+        meta_file = st.file_uploader("Meta dosyasını (.meta) seçin", type="meta", key="dec_meta_file_uploader")
         
         meta_data_available = False
         meta = {}
         if meta_file:
             try:
+                # Meta dosyasını okuma ve önizleme
                 meta_content = meta_file.getvalue().decode('utf-8')
                 meta = json.loads(meta_content)
                 meta_data_available = True
@@ -368,13 +389,14 @@ with tab_decrypt:
                 )
                 
             except Exception as e:
-                meta_data_placeholder.error("Meta dosya okuma hatası.")
+                meta_data_placeholder.error("Meta dosya okuma hatası veya geçersiz format.")
                 log(f"Meta dosya önizleme hatası: {e}")
 
         st.markdown("**2. Şifreyi Gir**")
         dec_pass = st.text_input("Görsel Şifresi (gerekliyse)", type="password", key="decrypt_pass")
         
         if st.button("🔓 Çöz", use_container_width=True, key="decrypt_button"):
+            # Önceki sonuçları temizle
             for k in ['decrypted_image', 'watermarked_image', 'is_message_visible', 'prompt_secret_key']:
                 st.session_state[k] = None
             
@@ -401,11 +423,19 @@ with tab_decrypt:
                         log("Hata: Henüz zamanı gelmedi.")
                         st.warning(f"Bu dosyanın açılmasına daha var.\n\nAçılma Zamanı: {open_time_str}")
                     else:
-                        pw_to_use = "" if allow_no else dec_pass
+                        pw_to_use = "" # Şifre çözme için kullanılacak şifre
+                        
                         if not allow_no and not dec_pass:
-                            log("Hata: Şifre gerekli.")
-                            st.error("Bu dosya için şifre gereklidir, ancak şifre girilmedi.")
+                            log("Hata: Şifre gerekli ancak girilmedi.")
+                            st.error("Bu dosya için görsel şifresi gereklidir, ancak şifre girilmedi.")
+                        elif not allow_no:
+                             # Şifre gerekiyorsa, girilen şifreyi kullan
+                             pw_to_use = dec_pass
                         else:
+                            # Şifre gerekmiyorsa pw_to_use zaten ""
+                            pass
+
+                        if (allow_no and now >= ot_dt) or (not allow_no and dec_pass and now >= ot_dt):
                             log("Zaman ve şifre kontrolleri tamam. Çözme işlemi başlıyor...")
                             progress_bar = st.progress(0, text="Başlatılıyor...")
                             enc_image_bytes = enc_file.getvalue()
@@ -415,7 +445,7 @@ with tab_decrypt:
                             )
                             
                             if dec_img is None:
-                                pass 
+                                pass # Hata zaten decrypt_image_in_memory içinde loglandı
                             else:
                                 calc_tag = hashlib.sha256(key_hex.encode("utf-8") + dec_img.tobytes()).hexdigest()
                                 
@@ -455,14 +485,15 @@ with tab_decrypt:
                 label="Görüntülenen Resmi İndir",
                 data=img_byte_arr.getvalue(),
                 file_name="decrypted_image.png",
-                mime="image/png"
+                mime="image/png",
+                key="download_displayed_image_button"
             )
         else:
             st.info(caption)
         
         st.markdown("---")
         
-        # --- Gizli Mesaj Gösterme Mantığı ---
+        # --- Gizli Mesaj Gösterme Mantığı (Missing Submit Button Hatasından Kurtulmak İçin Form Kaldırıldı) ---
         
         if st.session_state.decrypted_image is not None and st.session_state.hidden_message:
             
@@ -476,7 +507,6 @@ with tab_decrypt:
                 if st.button("Gizli Mesajı Göster", use_container_width=True, key="show_secret_btn"):
                     if st.session_state.secret_key_hash:
                         log("Gizli mesaj şifresi isteniyor...")
-                        # Sadece prompt_secret_key'yi ayarla, rerundan hemen önce değil
                         st.session_state.prompt_secret_key = True 
                         st.rerun()
                     else:
@@ -488,15 +518,12 @@ with tab_decrypt:
                         st.session_state.is_message_visible = True
                         st.rerun()
 
-        # HATA ÇÖZÜMÜ: Missing Submit Button hatasını ortadan kaldırmak için, 
-        # buradaki dinamik form (secret_key_form) kaldırıldı ve yerine 
-        # düz bir input ve button mantığı kullanıldı.
+        # Gizli anahtar sorma arayüzü (Form kullanılmadan)
         if st.session_state.prompt_secret_key:
             st.warning("Filigranı görmek için gizli mesaj şifresini girin:")
             
             entered_key = st.text_input("Gizli Mesaj Şifresi", type="password", key="modal_pass_new")
             
-            # Form kaldırıldı, basit bir button kullanılıyor
             if st.button("Onayla ve Göster", key="secret_key_submit_new", use_container_width=True):
                 if not entered_key:
                     st.error("Lütfen şifreyi giriniz.")
