@@ -4,17 +4,18 @@ import hashlib, datetime, random, os, json, io
 # Saat dilimi işlemleri için gerekli kütüphaneler
 from zoneinfo import ZoneInfo
 import time 
+
 # Türkiye/İstanbul saat dilimi tanımı (UTC+3)
 TURKISH_TZ = ZoneInfo("Europe/Istanbul")
 
 # ----------------------------- Ayarlar ve Başlık -----------------------------
 st.set_page_config(
-    page_title="Zamanlı Görsel Şifreleme (🇹🇷)",
+    page_title="Zamanlı Görsel Şifreleme (🇹🇷 Saat Ayarlı)",
     page_icon="🖼️",
     layout="wide"
 )
 
-st.title("🖼️ Zamanlı Görsel Şifreleme (🇹🇷)")
+st.title("🖼️ Zamanlı Görsel Şifreleme (🇹🇷 TR Saati ile)")
 
 # ----------------------------- Session State (Oturum Durumu) -----------------------------
 
@@ -29,7 +30,10 @@ def get_initial_state():
         'is_message_visible': False,
         'prompt_secret_key': False,
         'generated_enc_bytes': None,
-        'generated_meta_bytes': None
+        'generated_meta_bytes': None,
+        # Dosya yükleyicilerin ve metin girişlerinin Streamlit yeniden çalışma döngüsünde değerlerini koruyabilmesi için key'lerini resetlememiz gerekir.
+        'decrypt_pass': '', 
+        # Dosya yükleyici key'lerini burada tutmuyoruz, onun yerine özel bir temizleme fonksiyonu kullanacağız.
     }
 
 def init_state():
@@ -44,6 +48,25 @@ def reset_app():
     log("Uygulama sıfırlandı. Tüm görseller ve veriler temizlendi.")
     st.session_state.clear()
     init_state() # Sıfırladıktan sonra yeniden başlat
+    st.rerun()
+
+def reset_decrypt_inputs():
+    """Şifre çözme sekmesindeki girdileri sıfırlar."""
+    log("Şifre Çözme girdileri temizlendi.")
+    # Sadece şifre çözme ile ilgili session state'leri temizle
+    st.session_state['decrypted_image'] = None
+    st.session_state['watermarked_image'] = None
+    st.session_state['hidden_message'] = ""
+    st.session_state['secret_key_hash'] = ""
+    st.session_state['is_message_visible'] = False
+    st.session_state['prompt_secret_key'] = False
+    
+    # Metin girişlerini temizle (key'leri kullanarak)
+    st.session_state['decrypt_pass'] = ''
+    
+    # Dosya yükleyicilerini temizlemek için key'lerini de değiştirip yeniden yüklenmeye zorlamamız gerekir.
+    # Streamlit'te dosya yükleyicilerini resetlemek için yeni bir key set etmek en pratik yoldur.
+    # Ancak burada basitçe st.rerun() çağırmak tüm inputları temizlemek için yeterli olur.
     st.rerun()
 
 init_state()
@@ -231,8 +254,8 @@ with st.sidebar:
     
     st.subheader("Uygulama Kontrolü")
     
-    # 1. Sıfırlama Butonu
-    st.button("🔄 Uygulamayı Sıfırla (Reset)", on_click=reset_app, help="Tüm yüklemeleri, logları ve çözülmüş görselleri temizler.")
+    # 1. Sıfırlama Butonu (Genel Reset)
+    st.button("🔄 Uygulamayı Sıfırla (GENEL RESET)", on_click=reset_app, help="Tüm oturum verilerini, görselleri ve logları temizler.")
     
     st.subheader("Örnek Resim")
     st.info("Test için hızlıca bir resim oluşturun ve şifreleme sekmesinden indirin.")
@@ -256,6 +279,7 @@ with st.sidebar:
             **Şifre Çözme:**
             1. `🔓 Çöz` sekmesinde iki dosyayı da yükleyin.
             2. Şifre (gerekliyse) girin ve `Çöz` butonuna basın. Resim, açılma zamanı geldiyse çözülür.
+            3. **Temizle Butonu:** Çöz sekmesindeki tüm yüklenen dosya ve girilen şifreyi siler.
             """
         )
     
@@ -270,11 +294,14 @@ tab_encrypt, tab_decrypt = st.tabs(["🔒 Şifrele", "🔓 Çöz"])
 with tab_encrypt:
     st.subheader("Yeni Bir Görseli Şifrele")
     
+    # Şifreleme sekmesindeki dosya yükleyicisi için dinamik bir key kullanıyoruz
+    uploaded_file = st.file_uploader(
+        "1. Şifrelenecek resmi seçin", 
+        type=["png", "jpg", "jpeg", "bmp"],
+        key="encrypt_file_uploader" 
+    )
+    
     with st.form("encrypt_form"):
-        uploaded_file = st.file_uploader(
-            "1. Şifrelenecek resmi seçin", 
-            type=["png", "jpg", "jpeg", "bmp"]
-        )
         
         st.markdown("---")
         st.markdown("**Şifreleme Ayarları**")
@@ -296,14 +323,16 @@ with tab_encrypt:
             enc_date = st.date_input(
                 "Açılma Tarihi (YYYY-AA-GG)",
                 value=min_date + datetime.timedelta(days=1),
-                min_value=min_date
+                min_value=min_date,
+                key="enc_date" # Key ekledik
             )
 
         with col_time:
             enc_time_str = st.text_input(
                 "Açılma Saati (HH:MM formatında)",
                 value="00:00",
-                placeholder="Örn: 14:30"
+                placeholder="Örn: 14:30",
+                key="enc_time_str" # Key ekledik
             )
 
         # --- Zaman İşleme Başlangıcı ---
@@ -402,8 +431,9 @@ with tab_decrypt:
 
     with col1:
         st.markdown("**1. Dosyaları Yükle**")
-        enc_file = st.file_uploader("Şifreli resmi (.png) seçin", type="png")
-        meta_file = st.file_uploader("Meta dosyasını (.meta) seçin", type="meta")
+        # Dosya yükleyicileri için temizleme amaçlı key'leri kullanıyoruz.
+        enc_file = st.file_uploader("Şifreli resmi (.png) seçin", type="png", key="dec_enc_file")
+        meta_file = st.file_uploader("Meta dosyasını (.meta) seçin", type="meta", key="dec_meta_file")
         
         meta_data_available = False
         meta = {}
@@ -466,85 +496,94 @@ with tab_decrypt:
                 log(f"Meta dosya önizleme hatası: {e}")
 
         st.markdown("**2. Şifreyi Gir**")
+        # Şifre girişi için key kullanarak state'ini reset_decrypt_inputs ile temizleyebiliriz
         dec_pass = st.text_input("Görsel Şifresi (gerekliyse)", type="password", key="decrypt_pass")
         
-        if st.button("🔓 Çöz", use_container_width=True):
-            # Çözme butonuna basıldığında tüm görsel ve mesaj durumlarını sıfırla
-            for k in ['decrypted_image', 'watermarked_image', 'is_message_visible', 'prompt_secret_key']:
-                 st.session_state[k] = None
-            st.session_state.hidden_message = ""
-            st.session_state.secret_key_hash = ""
-            
-            log("--- Yeni Çözme İşlemi Başlatıldı ---")
-            
-            if not enc_file or not meta_file:
-                st.error("Lütfen hem şifreli .png hem de .meta dosyasını yükleyin.")
-            elif not meta_data_available:
-                    st.error("Yüklenen meta dosyası geçerli bir JSON formatında değil.")
-            else:
-                try:
-                    open_time_str = meta.get("open_time")
-                    allow_no = bool(meta.get("allow_no_password", False))
-                    stored_tag = meta.get("verify_tag")
-                    image_hash = meta.get("image_content_hash", "")
-                    
-                    st.session_state.hidden_message = meta.get("hidden_message", "")
-                    st.session_state.secret_key_hash = meta.get("secret_key_hash", "")
+        # Çöz ve Temizle butonlarını yan yana yerleştirelim
+        col_dec_btn, col_res_btn = st.columns([2, 1])
 
-                    # 1. Zaman kontrolü
-                    # Meta veriden okunan zamanı (TZ-naive) al ve TR saat dilimine dönüştür
-                    naive_ot_dt = datetime.datetime.strptime(open_time_str, "%Y-%m-%d %H:%M")
-                    ot_dt = naive_ot_dt.replace(tzinfo=TURKISH_TZ)
+        with col_dec_btn:
+            if st.button("🔓 Çöz", use_container_width=True):
+                # Çözme butonuna basıldığında tüm görsel ve mesaj durumlarını sıfırla
+                for k in ['decrypted_image', 'watermarked_image', 'is_message_visible', 'prompt_secret_key']:
+                    st.session_state[k] = None
+                st.session_state.hidden_message = ""
+                st.session_state.secret_key_hash = ""
+                
+                log("--- Yeni Çözme İşlemi Başlatıldı ---")
+                
+                if not enc_file or not meta_file:
+                    st.error("Lütfen hem şifreli .png hem de .meta dosyasını yükleyin.")
+                elif not meta_data_available:
+                        st.error("Yüklenen meta dosyası geçerli bir JSON formatında değil.")
+                else:
+                    try:
+                        open_time_str = meta.get("open_time")
+                        allow_no = bool(meta.get("allow_no_password", False))
+                        stored_tag = meta.get("verify_tag")
+                        image_hash = meta.get("image_content_hash", "")
+                        
+                        st.session_state.hidden_message = meta.get("hidden_message", "")
+                        st.session_state.secret_key_hash = meta.get("secret_key_hash", "")
 
-                    # Şu anki zamanı TR saat dilimiyle al ve kontrol için saniyeyi sıfırla
-                    now_tr = datetime.datetime.now(TURKISH_TZ)
-                    now_check = now_tr.replace(second=0, microsecond=0)
-                    
-                    if now_check < ot_dt:
-                        log("Hata: Henüz zamanı gelmedi.")
+                        # 1. Zaman kontrolü
+                        # Meta veriden okunan zamanı (TZ-naive) al ve TR saat dilimine dönüştür
+                        naive_ot_dt = datetime.datetime.strptime(open_time_str, "%Y-%m-%d %H:%M")
+                        ot_dt = naive_ot_dt.replace(tzinfo=TURKISH_TZ)
+
+                        # Şu anki zamanı TR saat dilimiyle al ve kontrol için saniyeyi sıfırla
+                        now_tr = datetime.datetime.now(TURKISH_TZ)
+                        now_check = now_tr.replace(second=0, microsecond=0)
                         
-                        time_left = ot_dt - now_tr
-                        days = time_left.days
-                        total_seconds = int(time_left.total_seconds())
-                        hours = total_seconds // 3600
-                        minutes = (total_seconds % 3600) // 60
-                        
-                        st.warning(f"Bu dosyanın açılmasına daha var. \n\nAçılma Zamanı: **{open_time_str}**\nKalan Süre: **{days} gün, {hours} saat, {minutes} dakika**")
-                    else:
-                        # 2. Şifre kontrolü
-                        pw_to_use = "" if allow_no else dec_pass
-                        if not allow_no and not dec_pass:
-                            log("Hata: Şifre gerekli.")
-                            st.error("Bu dosya için şifre gereklidir, ancak şifre girilmedi.")
+                        if now_check < ot_dt:
+                            log("Hata: Henüz zamanı gelmedi.")
+                            
+                            time_left = ot_dt - now_tr
+                            days = time_left.days
+                            total_seconds = int(time_left.total_seconds())
+                            hours = total_seconds // 3600
+                            minutes = (total_seconds % 3600) // 60
+                            
+                            st.warning(f"Bu dosyanın açılmasına daha var. \n\nAçılma Zamanı: **{open_time_str}**\nKalan Süre: **{days} gün, {hours} saat, {minutes} dakika**")
                         else:
-                            log("Zaman ve şifre kontrolleri tamam. Çözme işlemi başlıyor...")
-                            progress_bar = st.progress(0, text="Başlatılıyor...")
-                            enc_image_bytes = enc_file.getvalue()
-                            
-                            # 3. Çözme işlemi
-                            dec_img, key_hex = decrypt_image_in_memory(
-                                enc_image_bytes, pw_to_use, open_time_str, image_hash, progress_bar
-                            )
-                            
-                            if dec_img is None:
-                                pass
+                            # 2. Şifre kontrolü
+                            pw_to_use = "" if allow_no else dec_pass
+                            if not allow_no and not dec_pass:
+                                log("Hata: Şifre gerekli.")
+                                st.error("Bu dosya için şifre gereklidir, ancak şifre girilmedi.")
                             else:
-                                # 4. Doğrulama (Verification)
-                                calc_tag = hashlib.sha256(key_hex.encode("utf-8") + dec_img.tobytes()).hexdigest()
+                                log("Zaman ve şifre kontrolleri tamam. Çözme işlemi başlıyor...")
+                                progress_bar = st.progress(0, text="Başlatılıyor...")
+                                enc_image_bytes = enc_file.getvalue()
                                 
-                                if calc_tag != stored_tag:
-                                    log("Doğrulama başarısız: Yanlış şifre veya bozuk dosya.")
-                                    st.error("Çözme Hatası: Yanlış şifre girildi veya dosyalar bozulmuş.")
-                                    st.session_state.decrypted_image = None
+                                # 3. Çözme işlemi
+                                dec_img, key_hex = decrypt_image_in_memory(
+                                    enc_image_bytes, pw_to_use, open_time_str, image_hash, progress_bar
+                                )
+                                
+                                if dec_img is None:
+                                    pass
                                 else:
-                                    log("Doğrulama başarılı! Resim çözüldü.")
-                                    st.success("Görselin şifresi başarıyla çözüldü!")
-                                    st.session_state.decrypted_image = dec_img
+                                    # 4. Doğrulama (Verification)
+                                    calc_tag = hashlib.sha256(key_hex.encode("utf-8") + dec_img.tobytes()).hexdigest()
                                     
-                except Exception as e:
-                    log(f"Çözme hatası: {e}")
-                    st.error(f"Çözme sırasında beklenmedik bir hata oluştu: {e}")
-                    st.session_state.decrypted_image = None
+                                    if calc_tag != stored_tag:
+                                        log("Doğrulama başarısız: Yanlış şifre veya bozuk dosya.")
+                                        st.error("Çözme Hatası: Yanlış şifre girildi veya dosyalar bozulmuş.")
+                                        st.session_state.decrypted_image = None
+                                    else:
+                                        log("Doğrulama başarılı! Resim çözüldü.")
+                                        st.success("Görselin şifresi başarıyla çözüldü!")
+                                        st.session_state.decrypted_image = dec_img
+                                        
+                    except Exception as e:
+                        log(f"Çözme hatası: {e}")
+                        st.error(f"Çözme sırasında beklenmedik bir hata oluştu: {e}")
+                        st.session_state.decrypted_image = None
+        
+        with col_res_btn:
+            # Temizle butonu
+            st.button("🗑️ Temizle", on_click=reset_decrypt_inputs, use_container_width=True, help="Yüklenen dosyaları, şifreyi ve çözülmüş resmi siler.")
 
     with col2:
         st.subheader("Önizleme")
@@ -624,6 +663,4 @@ with tab_decrypt:
                     st.error("Gizli mesaj şifresi yanlış.")
         
         if st.session_state.is_message_visible and st.session_state.hidden_message:
-            st.success(f"**GİZLİ MESAJ (MetaA Veri):**\n\n{st.session_state.hidden_message}")
-
-
+            st.success(f"**GİZLİ MESAJ (Meta Veri):**\n\n{st.session_state.hidden_message}")
