@@ -14,7 +14,7 @@ st.title("🖼️ Zamanlı Görsel Şifreleme (Streamlit)")
 # ----------------------------- Session State (Oturum Durumu) -----------------------------
 def init_state():
     """Tüm oturum durumlarını başlatır ve varsayılanları atar."""
-    # Kararlı başlangıç değeri: Şu andan bir gün sonrası (Streamlit'in None hatasını önlemek için)
+    # Kararlı başlangıç değeri: Şu andan bir gün sonrası 
     default_open_time = datetime.datetime.now() + datetime.timedelta(days=1)
     
     defaults = {
@@ -262,8 +262,8 @@ tab_encrypt, tab_decrypt = st.tabs(["🔒 Şifrele", "🔓 Çöz"])
 with tab_encrypt:
     st.subheader("Yeni Bir Görseli Şifrele")
     
-    # min_date hesaplaması formun dışında tutuldu.
-    min_date = datetime.datetime.now()
+    # KULLANILABİLECEK MİNİMUM ZAMANI HESAPLA (Şu anki zamandan 1 dakika sonrası)
+    min_date_relaxed = datetime.datetime.now() + datetime.timedelta(minutes=1)
 
     with st.form("encrypt_form"):
         uploaded_file = st.file_uploader(
@@ -282,18 +282,15 @@ with tab_encrypt:
         enc_secret_text = st.text_area("Gizli Mesaj (Meta veriye saklanır)", placeholder="Gizli notunuz...", key="enc_secret_text_area")
         enc_secret_key = st.text_input("Gizli Mesaj Şifresi (Filigranı görmek için)", type="password", placeholder="Filigranı açacak şifre", key="enc_secret_key_input")
         
-        # AÇILMA ZAMANI (Datetime Input)
-        try:
-            # HATA ÇÖZÜMÜ: datetime_input'un kararsızlığını gidermek için try/except bloğu eklendi.
-            enc_time = st.datetime_input(
-                "Açılma Zamanı (Bu zamandan önce açılamaz)", 
-                value=st.session_state.encryption_start_time,
-                min_value=min_date,
-                key="encryption_time_input" 
-            )
-        except AttributeError:
-             # Eğer hata alırsa, kararlı başlangıç değerini kullan
-             enc_time = st.session_state.encryption_start_time
+        # AÇILMA ZAMANI (Datetime Input) - KARARLILIK İÇİN GÜNCELLENDİ
+        
+        enc_time = st.datetime_input(
+            "Açılma Zamanı (Bu zamandan önce açılamaz)", 
+            value=st.session_state.encryption_start_time,
+            min_value=min_date_relaxed, # Minimum değer 1 dakika sonrası olarak ayarlandı
+            key="encryption_time_input_fixed", 
+            help=f"Resmin şifresi sadece bu tarih ve saatten SONRA çözülebilir. Lütfen saati ve tarihi dikkatlice ayarlayın. Minimum ayar: {normalize_time(min_date_relaxed)}"
+        )
         
         # Kullanıcı değeri değiştirdiğinde, kararlı değeri de güncelleyelim.
         if enc_time is not None:
@@ -388,10 +385,15 @@ with tab_decrypt:
                 now = datetime.datetime.now()
                 is_open = "🔓 AÇILABİLİR" if now >= ot_dt else "🔒 KİLİTLİ"
                 color = "green" if now >= ot_dt else "red"
+                
+                # Geçerli saati de göstermek kullanıcıya yardımcı olacaktır
+                current_time_str = normalize_time(now)
 
                 meta_data_placeholder.markdown(
                     f"**Açılma Zamanı Bilgisi:**\n\n"
-                    f"Bu dosya **<span style='color:{color}'>{open_time_str}</span>** tarihinde açılmak üzere ayarlanmıştır. Şu anki durumu: **{is_open}**", 
+                    f"- Hedeflenen Açılma Zamanı: **<span style='color:{color}'>{open_time_str}</span>**\n"
+                    f"- Şu Anki Zaman: **{current_time_str}**\n\n"
+                    f"Durum: **{is_open}**", 
                     unsafe_allow_html=True
                 )
                 
