@@ -4,6 +4,7 @@ import hashlib, datetime, random, os, json, io
 # Saat dilimi işlemleri için gerekli kütüphaneler
 from zoneinfo import ZoneInfo
 import time 
+import base64
 
 # Türkiye/İstanbul saat dilimi tanımı (UTC+3)
 TURKISH_TZ = ZoneInfo("Europe/Istanbul")
@@ -182,6 +183,95 @@ def create_sample_image_bytes():
     log("Örnek resim hafızada oluşturuldu.")
     return img_bytes
 
+# ----------------------------- İkili İndirme Fonksiyonu -----------------------------
+
+def download_button_js(enc_bytes, meta_bytes, base_name):
+    """
+    Şifreli resmi (.png) ve meta veriyi (.meta) tek bir Streamlit butonuyla 
+    ardışık olarak indirmek için JavaScript/HTML kodu üretir.
+    """
+    if not enc_bytes or not meta_bytes:
+        return 
+
+    enc_filename = f"{base_name}_encrypted.png"
+    meta_filename = f"{base_name}_encrypted.meta"
+
+    # Byte dizilerini Base64'e dönüştürme
+    enc_base64 = base64.b64encode(enc_bytes).decode('utf-8')
+    meta_base64 = base64.b64encode(meta_bytes).decode('utf-8')
+
+    # CSS ve JS kodu (Streamlit butonu yerine HTML/JS kullanılıyor)
+    js_code = f"""
+    <script>
+    function b64toBlob(b64Data, contentType='') {{
+        const sliceSize = 512;
+        const byteCharacters = atob(b64Data);
+        const byteArrays = [];
+
+        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {{
+            const slice = byteCharacters.slice(offset, offset + sliceSize);
+            const byteNumbers = new Array(slice.length);
+            for (let i = 0; i < slice.length; i++) {{
+                byteNumbers[i] = slice.charCodeAt(i);
+            }}
+            const byteArray = new Uint8Array(byteNumbers);
+            byteArrays.push(byteArray);
+        }}
+        return new Blob(byteArrays, {{type: contentType}});
+    }}
+
+    function downloadFile(blob, filename) {{
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        // İndirme işlemini tetikle
+        a.click();
+        // Geçici URL'i temizle
+        URL.revokeObjectURL(url);
+    }}
+
+    function downloadBothFiles() {{
+        const encBlob = b64toBlob('{enc_base64}', 'image/png');
+        // Meta veriyi JSON olarak işaretliyoruz
+        const metaBlob = b64toBlob('{meta_base64}', 'application/json');
+
+        // 1. PNG'yi indir
+        downloadFile(encBlob, '{enc_filename}');
+
+        // 2. Meta veriyi indir (Çakışmayı önlemek için küçük bir gecikme)
+        setTimeout(() => {{
+            downloadFile(metaBlob, '{meta_filename}');
+        }}, 500);
+    }}
+    </script>
+    """
+    
+    # Buton HTML'i (Streamlit görünümüne uygun hale getirildi)
+    button_html = f"""
+    <button 
+        onclick="downloadBothFiles()" 
+        style="
+            background-color: #1c5ac6; 
+            color: white; 
+            padding: 10px 20px; 
+            border-radius: 8px; 
+            font-weight: bold; 
+            border: none;
+            cursor: pointer;
+            width: 100%;
+            transition: background-color 0.2s ease;
+        "
+        onmouseover="this.style.backgroundColor='#184da3'"
+        onmouseout="this.style.backgroundColor='#1c5ac6'"
+    >
+        🖼️ PNG ve Meta Veriyi İndir (Tek Tık)
+    </button>
+    """
+    
+    # HTML ile birlikte JS kodunu Streamlit'e gönder
+    st.markdown(js_code + button_html, unsafe_allow_html=True)
+
 # ----------------------------- Çekirdek (encrypt/decrypt) -----------------------------
 
 def encrypt_image_file(image_bytes, password, open_time_dt, secret_text, secret_key, allow_no_password, progress_bar):
@@ -288,6 +378,7 @@ with st.sidebar:
     if st.button("Örnek Resim Oluştur"):
         img_bytes = create_sample_image_bytes()
         # Çıktı state'lerini güncelle
+        # Örnek resim oluşturulduğunda meta verisi yoktur, bu sadece test amaçlıdır.
         st.session_state.generated_enc_bytes = img_bytes
         st.session_state.generated_meta_bytes = None
         log("Test için örnek resim oluşturuldu. 'Şifrele' sekmesinden indirebilirsiniz.")
@@ -301,7 +392,7 @@ with st.sidebar:
             **Şifreleme:**
             1. `🔒 Şifrele` sekmesine gidin.
             2. Bir resim dosyası yükleyin ve ayarları yapın.
-            3. `Şifrele` butonuna basın ve `.png` ile `.meta` dosyalarını indirin.
+            3. `Şifrele` butonuna basın ve `.png` ile `.meta` dosyalarını tek bir tıkla indirin.
             
             **Şifre Çözme:**
             1. `🔓 Çöz` sekmesinde iki dosyayı da yükleyin.
@@ -441,26 +532,18 @@ with tab_encrypt:
                 st.session_state.generated_meta_bytes = meta_bytes
                 
                 base_name = os.path.splitext(uploaded_file.name)[0]
-                enc_filename = f"{base_name}_encrypted.png"
-                meta_filename = f"{base_name}_encrypted.meta"
                 
-                st.download_button(
-                    label="1. Şifreli Resmi (.png) İndir",
-                    data=st.session_state.generated_enc_bytes,
-                    file_name=enc_filename,
-                    mime="image/png"
-                )
-                st.download_button(
-                    label="2. Meta Dosyasını (.meta) İndir",
-                    data=st.session_state.generated_meta_bytes,
-                    file_name=meta_filename,
-                    mime="application/json"
+                # Tek tıkla indirme butonunu göster
+                download_button_js(
+                    st.session_state.generated_enc_bytes,
+                    st.session_state.generated_meta_bytes,
+                    base_name
                 )
             else:
                 log("Şifreleme başarısız.")
                 st.error("Şifreleme sırasında bir hata oluştu. Logları kontrol edin.")
     
-    # Örnek Resim indirme butonu, sadece kenar çubuğundan oluşturulduysa gösterilir
+    # Örnek Resim indirme butonu, sadece kenar çubuğundan oluşturulduysa ve meta veri yoksa gösterilir
     elif st.session_state.generated_enc_bytes and not st.session_state.generated_meta_bytes:
         st.info("Kenar çubuğunda oluşturulan örnek resmi indirin. Bu resim şifresizdir.")
         st.download_button(
