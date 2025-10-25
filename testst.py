@@ -39,7 +39,7 @@ init_state()
 def log(text):
     """Streamlit için loglama fonksiyonu. Logları session_state'e ekler."""
     ts = datetime.datetime.now().strftime("%H:%M:%S")
-    # Hata düzeltildi: st.session_session_state yerine st.session_state kullanıldı.
+    # Yazım hatası düzeltildi: st.session_session_state yerine st.session_state kullanıldı.
     st.session_state.log = f"[{ts}] {text}\n" + st.session_state.log # Yeni loglar üste gelsin
 
 def normalize_time(t):
@@ -203,7 +203,6 @@ def decrypt_image_in_memory(enc_image_bytes, password, open_time_str, image_hash
 
 # --- Sidebar (Kenar Çubuğu) ---
 with st.sidebar:
-    # Bu satırın çalışabilmesi için loglama hatası düzeltildi.
     st.image(create_sample_image_bytes(), use_column_width=True, caption="Örnek Resim Görünümü")
     
     st.subheader("Örnek Resim")
@@ -372,6 +371,8 @@ with tab_decrypt:
         st.markdown("**2. Şifreyi Gir**")
         dec_pass = st.text_input("Görsel Şifresi (gerekliyse)", type="password", key="decrypt_pass")
         
+        # Hata izleğinde bu butonun eksikliği yok, ancak formun dışında olabilir. 
+        # Çözme butonu, tüm formun submit butonu gibi davranır.
         if st.button("🔓 Çöz", use_container_width=True):
             # Çözme butonuna basıldığında tüm durumları sıfırla (log hariç)
             for k in ['decrypted_image', 'watermarked_image', 'is_message_visible', 'prompt_secret_key']:
@@ -477,14 +478,14 @@ with tab_decrypt:
             
             if st.session_state.is_message_visible:
                 # Mesaj görünür durumdaysa, gizle butonu
-                if st.button("Gizli Mesajı Gizle", use_container_width=True):
+                if st.button("Gizli Mesajı Gizle", use_container_width=True, key="hide_secret_btn"):
                     log("Gizli mesaj gizlendi.")
                     st.session_state.is_message_visible = False
                     st.session_state.prompt_secret_key = False
                     st.rerun() # Ekranı hemen güncelle
             else:
                 # Mesaj gizli durumdaysa, göster butonu
-                if st.button("Gizli Mesajı Göster", use_container_width=True):
+                if st.button("Gizli Mesajı Göster", use_container_width=True, key="show_secret_btn"):
                     if st.session_state.secret_key_hash:
                         # Gizli mesaj için şifre gerekiyorsa, şifre sorma alanını aç
                         log("Gizli mesaj şifresi isteniyor...")
@@ -504,9 +505,11 @@ with tab_decrypt:
         if st.session_state.prompt_secret_key:
             st.warning("Filigranı görmek için gizli mesaj şifresini girin:")
             
+            # Burada formu oluşturduk
             with st.form("secret_key_form"):
                 entered_key = st.text_input("Gizli Mesaj Şifresi", type="password", key="modal_pass")
-                submit_key = st.form_submit_button("Onayla")
+                # Hatanın kaynağı burası olabilir, açık bir key ile yeniden tanımlandı.
+                submit_key = st.form_submit_button("Onayla", key="secret_key_submit")
                 
             if submit_key:
                 entered_hash = hashlib.sha256(entered_key.encode('utf-8')).hexdigest()
