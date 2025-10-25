@@ -33,6 +33,10 @@ def get_initial_state():
         'generated_enc_bytes': None,
         'generated_meta_bytes': None,
         
+        # YENİ DURUM DEĞİŞKENLERİ: İndirme durumunu takip etmek için
+        'is_png_downloaded': False,
+        'is_meta_downloaded': False,
+        
         # Temizleme için dinamik keyler için sayaç (KRİTİK)
         'reset_counter': 0, 
         
@@ -75,7 +79,11 @@ def reset_all_inputs():
     st.session_state['generated_enc_bytes'] = None
     st.session_state['generated_meta_bytes'] = None
     
-    # 2. Text Input/Checkbox state'lerini temizle
+    # 2. İndirme durumlarını sıfırla
+    st.session_state['is_png_downloaded'] = False
+    st.session_state['is_meta_downloaded'] = False
+    
+    # 3. Text Input/Checkbox state'lerini temizle
     st.session_state['decrypt_pass'] = ''
     st.session_state['enc_pass_input'] = ''
     st.session_state['enc_secret_text_input'] = ''
@@ -84,7 +92,7 @@ def reset_all_inputs():
     st.session_state['enc_time_str'] = '00:00'
     st.session_state['modal_pass'] = ''
 
-    # 3. KRİTİK ADIM: Dosya yükleyicilerini ve diğer dinamik bileşenleri sıfırlamak için sayacı artır.
+    # 4. KRİTİK ADIM: Dosya yükleyicilerini ve diğer dinamik bileşenleri sıfırlamak için sayacı artır.
     st.session_state['reset_counter'] += 1
     
     time.sleep(0.1)
@@ -268,6 +276,17 @@ def decrypt_image_in_memory(enc_image_bytes, password, open_time_str, image_hash
     progress_bar.progress(1.0, text="Tamamlandı!")
     return dec_img, key_hex
 
+# ----------------------------- DOWNLOAD CALLBACKS -----------------------------
+def set_png_downloaded():
+    """PNG indirme butonuna tıklandığında Session State'i günceller."""
+    st.session_state.is_png_downloaded = True
+    log("Şifreli PNG dosyası indirildi olarak işaretlendi.")
+
+def set_meta_downloaded():
+    """Meta indirme butonuna tıklandığında Session State'i günceller."""
+    st.session_state.is_meta_downloaded = True
+    log("Meta dosyası indirildi olarak işaretlendi.")
+
 # ----------------------------- ARAYÜZ (UI) -----------------------------
 
 # --- Sidebar (Kenar Çubuğu) ---
@@ -287,6 +306,11 @@ with st.sidebar:
         # Çıktı state'lerini güncelle
         st.session_state.generated_enc_bytes = img_bytes
         st.session_state.generated_meta_bytes = None
+        
+        # Yeni bir şifreleme çıktısı olduğu için indirme durumunu sıfırla
+        st.session_state.is_png_downloaded = False
+        st.session_state.is_meta_downloaded = False
+        
         log("Test için örnek resim oluşturuldu. 'Şifrele' sekmesinden indirebilirsiniz.")
         st.rerun() 
     
@@ -325,7 +349,6 @@ with tab_encrypt:
         key=f"encrypt_file_uploader_{st.session_state.reset_counter}" 
     )
     
-    # Hata DÜZELTMESİ: st.form içindeki buton st.form_submit_button olmalıdır.
     with st.form("encrypt_form"):
         
         st.markdown("---")
@@ -384,10 +407,13 @@ with tab_encrypt:
         if not time_format_valid and st.session_state.enc_time_str != '00:00':
             st.error("Lütfen saati **HH:MM** formatında doğru girin. (Örn: 14:30)")
 
-        # KRİTİK DÜZELTME: st.button yerine st.form_submit_button kullanıldı.
         submitted = st.form_submit_button("🔒 Şifrele", use_container_width=True)
 
     if submitted:
+        # Yeni şifreleme işlemi başladığında indirme durumunu sıfırla
+        st.session_state.is_png_downloaded = False
+        st.session_state.is_meta_downloaded = False
+        
         if not time_format_valid:
             st.warning("Lütfen zaman formatını düzeltin.")
             st.stop()
@@ -403,14 +429,6 @@ with tab_encrypt:
         if uploaded_file is None:
             st.error("Lütfen önce bir resim dosyası yükleyin.")
         else:
-            # HATA DÜZELTMESİ: Form içindeki input'lar zaten Session State'i güncellediği için, 
-            # bu atamalar kaldırılmıştır. Tekrar atama yapmak StreamlitAPIException hatasına neden oluyordu.
-            # st.session_state.enc_pass_input = enc_pass 
-            # st.session_state.enc_no_pass_checkbox = enc_no_pass
-            # st.session_state.enc_secret_text_input = enc_secret_text
-            # st.session_state.enc_secret_key_input = enc_secret_key
-            # st.session_state.enc_time_str = enc_time_str
-            
             log("Şifreleme başlatıldı...")
             progress_bar = st.progress(0, text="Başlatılıyor...")
             image_bytes = uploaded_file.getvalue()
@@ -430,34 +448,55 @@ with tab_encrypt:
                 st.session_state.generated_enc_bytes = enc_bytes
                 st.session_state.generated_meta_bytes = meta_bytes
                 
-                base_name = os.path.splitext(uploaded_file.name)[0]
-                
-                st.markdown("---")
-                st.subheader("İndirme Bağlantıları")
-                
-                # İstenen değişiklik: İndirme butonlarını ayırmak
-                col_png, col_meta = st.columns(2)
-                
-                with col_png:
-                    st.download_button(
-                        label="🖼️ Şifreli Resmi İndir (.png)",
-                        data=st.session_state.generated_enc_bytes,
-                        file_name=f"{base_name}_encrypted.png",
-                        mime="image/png",
-                        use_container_width=True
-                    )
-                with col_meta:
-                    st.download_button(
-                        label="🔑 Meta Veriyi İndir (.meta)",
-                        data=st.session_state.generated_meta_bytes,
-                        file_name=f"{base_name}_encrypted.meta",
-                        mime="application/json",
-                        use_container_width=True
-                    )
-                
             else:
                 log("Şifreleme başarısız.")
                 st.error("Şifreleme sırasında bir hata oluştu. Logları kontrol edin.")
+                st.session_state.generated_enc_bytes = None
+                st.session_state.generated_meta_bytes = None
+                st.session_state.is_png_downloaded = False
+                st.session_state.is_meta_downloaded = False
+
+    
+    # --- İndirme Bölümü (KRİTİK GÖRÜNÜRLÜK KONTROLÜ) ---
+    if st.session_state.generated_enc_bytes and st.session_state.generated_meta_bytes:
+        
+        base_name = os.path.splitext(uploaded_file.name)[0]
+        
+        # İki dosya da indirildiğinde bu bölümü gizle
+        if st.session_state.is_png_downloaded and st.session_state.is_meta_downloaded:
+            st.markdown("---")
+            st.success("Tebrikler! Hem Şifreli Resim hem de Meta Veri başarıyla indirildi. Yeni bir şifreleme başlatabilirsiniz.")
+        else:
+            st.markdown("---")
+            st.subheader("İndirme Bağlantıları (Zorunlu İkili İndirme)")
+            st.warning("Lütfen hem .png hem de .meta dosyasını indirin. İkisi de indirilince bu bölüm kaybolacaktır.")
+
+            col_png, col_meta = st.columns(2)
+            
+            # PNG İndirme Butonu
+            with col_png:
+                st.download_button(
+                    label="🖼️ Şifreli Resmi İndir (.png)",
+                    data=st.session_state.generated_enc_bytes,
+                    file_name=f"{base_name}_encrypted.png",
+                    mime="image/png",
+                    on_click=set_png_downloaded, # Callback eklendi
+                    disabled=st.session_state.is_png_downloaded, # Tıklanınca pasifleşir
+                    use_container_width=True
+                )
+            
+            # Meta İndirme Butonu
+            with col_meta:
+                st.download_button(
+                    label="🔑 Meta Veriyi İndir (.meta)",
+                    data=st.session_state.generated_meta_bytes,
+                    file_name=f"{base_name}_encrypted.meta",
+                    mime="application/json",
+                    on_click=set_meta_downloaded, # Callback eklendi
+                    disabled=st.session_state.is_meta_downloaded, # Tıklanınca pasifleşir
+                    use_container_width=True
+                )
+                
     
     # Örnek Resim indirme butonu, sadece kenar çubuğundan oluşturulduysa ve meta veri yoksa gösterilir
     elif st.session_state.generated_enc_bytes and not st.session_state.generated_meta_bytes:
@@ -691,12 +730,10 @@ with tab_decrypt:
         if st.session_state.prompt_secret_key:
             st.warning("Filigranı görmek için gizli mesaj şifresini girin:")
             
-            # Hata DÜZELTMESİ: st.form içinde yalnızca st.form_submit_button kullanılmalıdır.
             with st.form("secret_key_form"):
                 # Giriş değerini session state'ten alarak sıfırlama özelliğini destekliyoruz
                 entered_key = st.text_input("Gizli Mesaj Şifresi", type="password", key="modal_pass", value=st.session_state.modal_pass)
                 
-                # KRİTİK DÜZELTME: st.button yerine st.form_submit_button kullanıldı.
                 submit_key = st.form_submit_button("Onayla")
                 
             if submit_key:
