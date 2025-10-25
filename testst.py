@@ -55,11 +55,10 @@ def init_state():
 
 def reset_app():
     """Uygulamanın tüm oturum durumunu sıfırlar. (Genel Reset)"""
-    # NOTE: st.rerun() is removed from callback to fix the yellow warning (no-op)
     log("Uygulama sıfırlandı. Tüm görseller ve veriler temizlendi.")
     st.session_state.clear()
     init_state() # Sıfırladıktan sonra yeniden başlat
-    time.sleep(0.1) # Rerund'dan önce ufak bir bekleme ekleyelim
+    time.sleep(0.1) 
     st.rerun()
 
 def reset_all_inputs():
@@ -86,7 +85,6 @@ def reset_all_inputs():
     st.session_state['modal_pass'] = ''
 
     # 3. KRİTİK ADIM: Dosya yükleyicilerini ve diğer dinamik bileşenleri sıfırlamak için sayacı artır.
-    # Bu, o bileşenlerin key'ini değiştirir ve Streamlit'in onları yeniden oluşturmasını sağlar.
     st.session_state['reset_counter'] += 1
     
     time.sleep(0.1)
@@ -183,7 +181,7 @@ def create_sample_image_bytes():
     log("Örnek resim hafızada oluşturuldu.")
     return img_bytes
 
-# ----------------------------- İkili İndirme Fonksiyonu -----------------------------
+# ----------------------------- İkili İndirme Fonksiyonu (Tek Buton) -----------------------------
 
 def download_button_js(enc_bytes, meta_bytes, base_name):
     """
@@ -240,6 +238,7 @@ def download_button_js(enc_bytes, meta_bytes, base_name):
         downloadFile(encBlob, '{enc_filename}');
 
         // 2. Meta veriyi indir (Çakışmayı önlemek için küçük bir gecikme)
+        // NOTE: Tarayıcıların ardışık indirmeleri bloklamaması için ufak bir gecikme bırakmak faydalıdır.
         setTimeout(() => {{
             downloadFile(metaBlob, '{meta_filename}');
         }}, 500);
@@ -369,7 +368,6 @@ with st.sidebar:
     st.subheader("Uygulama Kontrolü")
     
     # 1. Sıfırlama Butonu (Genel Reset)
-    # NOTE: on_click'te st.rerun() çağırma uyarısını düzeltmek için st.rerun() kaldırıldı ve reset_app'e ufak bir bekleme eklendi.
     st.button("🔄 Uygulamayı Sıfırla (GENEL RESET)", on_click=reset_app, help="Tüm oturum verilerini, görselleri ve logları temizler.")
     
     st.subheader("Örnek Resim")
@@ -378,7 +376,6 @@ with st.sidebar:
     if st.button("Örnek Resim Oluştur"):
         img_bytes = create_sample_image_bytes()
         # Çıktı state'lerini güncelle
-        # Örnek resim oluşturulduğunda meta verisi yoktur, bu sadece test amaçlıdır.
         st.session_state.generated_enc_bytes = img_bytes
         st.session_state.generated_meta_bytes = None
         log("Test için örnek resim oluşturuldu. 'Şifrele' sekmesinden indirebilirsiniz.")
@@ -392,7 +389,7 @@ with st.sidebar:
             **Şifreleme:**
             1. `🔒 Şifrele` sekmesine gidin.
             2. Bir resim dosyası yükleyin ve ayarları yapın.
-            3. `Şifrele` butonuna basın ve `.png` ile `.meta` dosyalarını tek bir tıkla indirin.
+            3. `Şifrele` butonuna basın ve `.png` ile `.meta` dosyalarını **Tek Tıkla İndirme Butonu** ile indirin.
             
             **Şifre Çözme:**
             1. `🔓 Çöz` sekmesinde iki dosyayı da yükleyin.
@@ -412,14 +409,14 @@ tab_encrypt, tab_decrypt = st.tabs(["🔒 Şifrele", "🔓 Çöz"])
 with tab_encrypt:
     st.subheader("Yeni Bir Görseli Şifrele")
     
-    # KRİTİK: Dosya yükleyiciyi sıfırlamak için dinamik key kullanıyoruz
+    # Dosya yükleyiciyi sıfırlamak için dinamik key kullanıyoruz
     uploaded_file = st.file_uploader(
         "1. Şifrelenecek resmi seçin", 
         type=["png", "jpg", "jpeg", "bmp"],
         key=f"encrypt_file_uploader_{st.session_state.reset_counter}" 
     )
     
-    # KRİTİK HATA DÜZELTMESİ: st.form içindeki butonlar st.form_submit_button olmalıdır.
+    # Hata DÜZELTMESİ: st.form içindeki buton st.form_submit_button olmalıdır.
     with st.form("encrypt_form"):
         
         st.markdown("---")
@@ -440,12 +437,10 @@ with tab_encrypt:
         col_date, col_time = st.columns(2)
         
         min_date = datetime.datetime.now(TURKISH_TZ).date()
-        
-        # Varsayılan değeri hesapla (yarın 00:00)
         default_date = min_date + datetime.timedelta(days=1)
         
         with col_date:
-            # KRİTİK: Tarih input'u için de dinamik key kullanıyoruz
+            # Tarih input'u için de dinamik key kullanıyoruz
             enc_date = st.date_input(
                 "Açılma Tarihi (YYYY-AA-GG)",
                 value=default_date,
@@ -456,7 +451,7 @@ with tab_encrypt:
         with col_time:
             enc_time_str = st.text_input(
                 "Açılma Saati (HH:MM formatında)",
-                value=st.session_state.enc_time_str, # Session state'ten al
+                value=st.session_state.enc_time_str, 
                 placeholder="Örn: 14:30",
                 key="enc_time_str" 
             )
@@ -468,23 +463,17 @@ with tab_encrypt:
             hour, minute = map(int, enc_time_str.split(':'))
             if 0 <= hour <= 23 and 0 <= minute <= 59:
                 enc_time_val = datetime.time(hour, minute, 0)
-                # Kullanıcının girdiği tarih/saat bilgisini al ve TZ-aware (İstanbul) yap
                 naive_dt = datetime.datetime.combine(enc_date, enc_time_val).replace(second=0, microsecond=0)
                 enc_time_dt = naive_dt.replace(tzinfo=TURKISH_TZ)
-                
                 time_format_valid = True
             else:
-                # Sadece loglama ve uyarı
                 log("Hata: Geçersiz saat/dakika aralığı.")
         except Exception:
-            # Sadece loglama ve uyarı
             log("Hata: Geçersiz saat formatı.")
             time_format_valid = False
             
-        # Formun sadece geçerli zaman girildiğinde submit edilmesini sağlamak için ek kontrol
         if not time_format_valid and st.session_state.enc_time_str != '00:00':
             st.error("Lütfen saati **HH:MM** formatında doğru girin. (Örn: 14:30)")
-
 
         # KRİTİK DÜZELTME: st.button yerine st.form_submit_button kullanıldı.
         submitted = st.form_submit_button("🔒 Şifrele", use_container_width=True)
@@ -494,7 +483,7 @@ with tab_encrypt:
             st.warning("Lütfen zaman formatını düzeltin.")
             st.stop()
             
-        # KRİTİK: Şu anki zamanı da Türkiye saati olarak al
+        # Şu anki zamanı da Türkiye saati olarak al
         now_tr = datetime.datetime.now(TURKISH_TZ).replace(second=0, microsecond=0)
         
         if enc_time_dt <= now_tr:
@@ -527,13 +516,13 @@ with tab_encrypt:
             
             if enc_bytes and meta_bytes:
                 log("Şifreleme tamamlandı. Dosyalar indirilmeye hazır.")
-                st.success("Şifreleme Başarılı! Lütfen her iki dosyayı da indirin.")
+                st.success("Şifreleme Başarılı! Lütfen her iki dosyayı da tek bir tıkla indirin.")
                 st.session_state.generated_enc_bytes = enc_bytes
                 st.session_state.generated_meta_bytes = meta_bytes
                 
                 base_name = os.path.splitext(uploaded_file.name)[0]
                 
-                # Tek tıkla indirme butonunu göster
+                # TEK TIKLA İNDİRME BUTONUNU GÖSTER
                 download_button_js(
                     st.session_state.generated_enc_bytes,
                     st.session_state.generated_meta_bytes,
@@ -563,7 +552,7 @@ with tab_decrypt:
 
     with col1:
         st.markdown("**1. Dosyaları Yükle**")
-        # KRİTİK: Dosya yükleyicileri sıfırlamak için dinamik key kullanıyoruz
+        # Dosya yükleyicileri sıfırlamak için dinamik key kullanıyoruz
         enc_file = st.file_uploader("Şifreli resmi (.png) seçin", type="png", key=f"dec_enc_file_{st.session_state.reset_counter}")
         meta_file = st.file_uploader("Meta dosyasını (.meta) seçin", type="meta", key=f"dec_meta_file_{st.session_state.reset_counter}")
         
@@ -580,7 +569,7 @@ with tab_decrypt:
                 naive_ot_dt = datetime.datetime.strptime(open_time_str, "%Y-%m-%d %H:%M")
                 ot_dt = naive_ot_dt.replace(tzinfo=TURKISH_TZ)
                 
-                # KRİTİK: Şu anki zamanı da TR saat dilimiyle al
+                # Şu anki zamanı TR saat dilimiyle al
                 now_tr = datetime.datetime.now(TURKISH_TZ)
                 # Açılma kontrolü için saniyeleri sıfırla
                 now_check = now_tr.replace(second=0, microsecond=0)
@@ -602,7 +591,6 @@ with tab_decrypt:
                     parts = []
                     if days > 0: parts.append(f"**{days} gün**")
                     if hours > 0: parts.append(f"**{hours} saat**")
-                    # Düzeltme: Dakika ve saniye gösterme mantığı daha okunur hale getirildi
                     if minutes > 0 or not parts and seconds == 0: parts.append(f"**{minutes} dakika**")
                     if seconds > 0 or not parts: parts.append(f"**{seconds} saniye**")
                          
@@ -633,7 +621,6 @@ with tab_decrypt:
         col_dec_btn, col_res_btn = st.columns([2, 1])
 
         with col_dec_btn:
-            # DÜZELTME: use_column_width -> use_container_width
             if st.button("🔓 Çöz", use_container_width=True): 
                 # Çözme butonuna basıldığında tüm görsel ve mesaj durumlarını sıfırla
                 for k in ['decrypted_image', 'watermarked_image', 'is_message_visible', 'prompt_secret_key']:
@@ -717,8 +704,6 @@ with tab_decrypt:
         
         with col_res_btn:
             # Temizle butonu artık tüm girdileri resetliyor.
-            # DÜZELTME: use_column_width -> use_container_width
-            # NOTE: on_click'te st.rerun() çağırma uyarısını düzeltmek için st.rerun() kaldırıldı ve reset_all_inputs'a ufak bir bekleme eklendi.
             st.button("🗑️ Temizle", on_click=reset_all_inputs, use_container_width=True, help="Şifrele ve Çöz sekmelerindeki tüm yüklenen dosyaları, şifreleri ve sonuçları siler.") 
 
     with col2:
@@ -756,7 +741,6 @@ with tab_decrypt:
         if st.session_state.decrypted_image is not None and st.session_state.hidden_message:
             
             if st.session_state.is_message_visible:
-                # DÜZELTME: use_column_width -> use_container_width
                 if st.button("Gizli Mesajı Gizle", use_container_width=True): 
                     log("Gizli mesaj gizlendi.")
                     st.session_state.is_message_visible = False
@@ -764,7 +748,6 @@ with tab_decrypt:
                     st.session_state.watermarked_image = None
                     st.rerun()
             else:
-                # DÜZELTME: use_column_width -> use_container_width
                 if st.button("Gizli Mesajı Göster", use_container_width=True): 
                     if st.session_state.secret_key_hash:
                         log("Gizli mesaj şifresi isteniyor...")
@@ -782,7 +765,7 @@ with tab_decrypt:
         if st.session_state.prompt_secret_key:
             st.warning("Filigranı görmek için gizli mesaj şifresini girin:")
             
-            # KRİTİK HATA DÜZELTMESİ: st.form içinde yalnızca st.form_submit_button kullanılmalıdır.
+            # Hata DÜZELTMESİ: st.form içinde yalnızca st.form_submit_button kullanılmalıdır.
             with st.form("secret_key_form"):
                 # Giriş değerini session state'ten alarak sıfırlama özelliğini destekliyoruz
                 entered_key = st.text_input("Gizli Mesaj Şifresi", type="password", key="modal_pass", value=st.session_state.modal_pass)
@@ -807,6 +790,3 @@ with tab_decrypt:
                 else:
                     log("Hata: Gizli mesaj şifresi yanlış.")
                     st.error("Gizli mesaj şifresi yanlış.")
-        
-        if st.session_state.is_message_visible and st.session_state.hidden_message:
-            st.success(f"**GİZLİ MESAJ (Meta Veri):**\n\n{st.session_state.hidden_message}")
