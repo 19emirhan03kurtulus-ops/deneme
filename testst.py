@@ -131,7 +131,7 @@ def create_keystream(key_hex, w, h):
     return [random.randint(0, 255) for _ in range(w * h * 3)]
 
 def add_text_watermark(img: Image.Image, hidden_message: str) -> Image.Image:
-    """Şifre çözülmüş görselin üzerine SADECE gizli mesajı ekler."""
+    """Şifre çözülmüş görselin üzerine SADECE gizli mesajı ekler. Konumu ve görünümü iyileştirildi."""
     img_copy = img.copy()
     draw = ImageDraw.Draw(img_copy, 'RGBA')
     w, h = img_copy.size
@@ -139,19 +139,18 @@ def add_text_watermark(img: Image.Image, hidden_message: str) -> Image.Image:
     if not hidden_message.strip():
         return img 
 
-    text_lines = [
-        "*** GİZLİ MESAJ ***",
-        f"{hidden_message}"
-    ]
-    full_text = "\n".join(text_lines)
+    # Sadece gizli mesajı göster
+    full_text = f"{hidden_message}"
     
     try:
-        font = ImageFont.load_default().font_variant(size=24)
+        # Daha büyük bir font boyutu seçelim
+        font = ImageFont.load_default().font_variant(size=30) 
     except IOError:
         font = ImageFont.load_default()
         
-    text_color = (255, 0, 0, 255) # Kırmızı ve tam opak
+    text_color = (255, 255, 255, 255) # Beyaz ve tam opak
     
+    # Metin boyutunu hesapla
     try:
         bbox = draw.textbbox((0, 0), full_text, font=font, anchor="ls")
         text_w = bbox[2] - bbox[0]
@@ -159,16 +158,20 @@ def add_text_watermark(img: Image.Image, hidden_message: str) -> Image.Image:
     except AttributeError:
         # Fallback for older Pillow versions
         text_w = draw.textlength(full_text, font=font)
-        text_h = 24 * len(text_lines)
+        text_h = 30 # Tahmini satır yüksekliği
+    
+    padding = 20 # Daha fazla boşluk bırak
+    
+    # Metni sağ alt köşeye, daha fazla içeriden yerleştir
+    x = w - text_w - padding 
+    y = h - text_h - padding 
 
-    padding = 15
-    # Metin sağ alt köşeye yerleştirilir.
-    x = w - text_w - padding * 2 
-    y = h - text_h - padding * 2
-
-    fill_color = (0, 0, 0, 180) # Siyah ve %70 opak
+    # Metin kutusu arka planı için koyu renk, daha yüksek opaklık
+    fill_color = (0, 0, 0, 200) # Siyah ve %80 opak
     draw.rectangle([x - padding, y - padding, x + text_w + padding, y + text_h + padding], fill=fill_color) 
-    draw.text((x + padding, y + padding), full_text, font=font, fill=text_color)
+    
+    # Metni yerleştir
+    draw.text((x, y), full_text, font=font, fill=text_color)
     
     return img_copy
 
@@ -738,10 +741,6 @@ with tab_decrypt:
                 submit_key = st.form_submit_button("Onayla")
                 
             if submit_key:
-                # KRİTİK DÜZELTME: Bu satır, form butonu tıklandığında hata veriyordu çünkü 'modal_pass' key'ine sahip widget zaten değerini atamıştı.
-                # Satır kaldırıldı. Artık doğrudan st.session_state.modal_pass'ı kullanacağız.
-                # st.session_state.modal_pass = entered_key 
-                
                 # Değerin Hash'ini kontrol et
                 entered_hash = hashlib.sha256(st.session_state.modal_pass.encode('utf-8')).hexdigest()
                 if entered_hash == st.session_state.secret_key_hash:
