@@ -15,7 +15,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🖼️ Zamanlı Görsel Şifreleme (🇹🇷)")
+st.title("🖼️ Zamanlı Görsel Şifreleme (🇹🇷 TR Saati ile)")
 
 # ----------------------------- Session State (Oturum Durumu) -----------------------------
 
@@ -44,16 +44,21 @@ def init_state():
             st.session_state[key] = value
 
 def reset_app():
-    """Uygulamanın tüm oturum durumunu sıfırlar."""
+    """Uygulamanın tüm oturum durumunu sıfırlar. (Genel Reset)"""
     log("Uygulama sıfırlandı. Tüm görseller ve veriler temizlendi.")
     st.session_state.clear()
     init_state() # Sıfırladıktan sonra yeniden başlat
     st.rerun()
 
-def reset_decrypt_inputs():
-    """Şifre çözme sekmesindeki girdileri sıfırlar."""
-    log("Şifre Çözme girdileri temizlendi.")
-    # Sadece şifre çözme ile ilgili session state'leri temizle
+def reset_all_inputs():
+    """Hem Şifrele hem de Çöz sekmesindeki tüm yüklemeleri, girdileri ve çıktıları sıfırlar."""
+    log("Tüm Şifreleme ve Çözme girdileri temizlendi.")
+    
+    # Şifreleme (Encrypt) ile ilgili state'leri temizle
+    st.session_state['generated_enc_bytes'] = None
+    st.session_state['generated_meta_bytes'] = None
+    
+    # Şifre Çözme (Decrypt) ile ilgili state'leri temizle
     st.session_state['decrypted_image'] = None
     st.session_state['watermarked_image'] = None
     st.session_state['hidden_message'] = ""
@@ -61,12 +66,10 @@ def reset_decrypt_inputs():
     st.session_state['is_message_visible'] = False
     st.session_state['prompt_secret_key'] = False
     
-    # Metin girişlerini temizle (key'leri kullanarak)
+    # Metin girişlerini temizle
     st.session_state['decrypt_pass'] = ''
     
-    # Dosya yükleyicilerini temizlemek için key'lerini de değiştirip yeniden yüklenmeye zorlamamız gerekir.
-    # Streamlit'te dosya yükleyicilerini resetlemek için yeni bir key set etmek en pratik yoldur.
-    # Ancak burada basitçe st.rerun() çağırmak tüm inputları temizlemek için yeterli olur.
+    # Dosya yükleyicilerini ve formları temizlemek için st.rerun() çağırıyoruz.
     st.rerun()
 
 init_state()
@@ -279,7 +282,7 @@ with st.sidebar:
             **Şifre Çözme:**
             1. `🔓 Çöz` sekmesinde iki dosyayı da yükleyin.
             2. Şifre (gerekliyse) girin ve `Çöz` butonuna basın. Resim, açılma zamanı geldiyse çözülür.
-            3. **Temizle Butonu:** Çöz sekmesindeki tüm yüklenen dosya ve girilen şifreyi siler.
+            3. **Temizle Butonu:** Tüm yüklenen dosya ve girilen şifreyi **(Şifrele ve Çöz sekmelerinde)** siler.
             """
         )
     
@@ -306,11 +309,11 @@ with tab_encrypt:
         st.markdown("---")
         st.markdown("**Şifreleme Ayarları**")
         
-        enc_pass = st.text_input("Görsel Şifresi (Çözme için)", type="password")
-        enc_no_pass = st.checkbox("Şifresiz açılmaya izin ver (Sadece zaman kilidi)")
+        enc_pass = st.text_input("Görsel Şifresi (Çözme için)", type="password", key="enc_pass_input")
+        enc_no_pass = st.checkbox("Şifresiz açılmaya izin ver (Sadece zaman kilidi)", key="enc_no_pass_checkbox")
         
-        enc_secret_text = st.text_area("Gizli Mesaj (Meta veriye saklanır)", placeholder="Gizli notunuz...")
-        enc_secret_key = st.text_input("Gizli Mesaj Şifresi (Filigranı görmek için)", type="password", placeholder="Filigranı açacak şifre")
+        enc_secret_text = st.text_area("Gizli Mesaj (Meta veriye saklanır)", placeholder="Gizli notunuz...", key="enc_secret_text_input")
+        enc_secret_key = st.text_input("Gizli Mesaj Şifresi (Filigranı görmek için)", type="password", placeholder="Filigranı açacak şifre", key="enc_secret_key_input")
         
         st.markdown("---")
         st.markdown("**2. Açılma Zamanı Ayarı (Türkiye Saati ile)**")
@@ -322,9 +325,11 @@ with tab_encrypt:
         with col_date:
             enc_date = st.date_input(
                 "Açılma Tarihi (YYYY-AA-GG)",
+                # Tarih ve saat inputlarının değerlerini temizlemek için key'leri kullanıyoruz. 
+                # Ancak form submit edildikten sonra temizlenmesini istediğimiz için form key'i yetiyor.
                 value=min_date + datetime.timedelta(days=1),
                 min_value=min_date,
-                key="enc_date" # Key ekledik
+                key="enc_date" 
             )
 
         with col_time:
@@ -332,7 +337,7 @@ with tab_encrypt:
                 "Açılma Saati (HH:MM formatında)",
                 value="00:00",
                 placeholder="Örn: 14:30",
-                key="enc_time_str" # Key ekledik
+                key="enc_time_str" 
             )
 
         # --- Zaman İşleme Başlangıcı ---
@@ -582,8 +587,8 @@ with tab_decrypt:
                         st.session_state.decrypted_image = None
         
         with col_res_btn:
-            # Temizle butonu
-            st.button("🗑️ Temizle", on_click=reset_decrypt_inputs, use_container_width=True, help="Yüklenen dosyaları, şifreyi ve çözülmüş resmi siler.")
+            # Temizle butonu artık tüm girdileri resetliyor.
+            st.button("🗑️ Temizle", on_click=reset_all_inputs, use_container_width=True, help="Şifrele ve Çöz sekmelerindeki tüm yüklenen dosyaları, şifreleri ve sonuçları siler.")
 
     with col2:
         st.subheader("Önizleme")
@@ -664,4 +669,3 @@ with tab_decrypt:
         
         if st.session_state.is_message_visible and st.session_state.hidden_message:
             st.success(f"**GİZLİ MESAJ (Meta Veri):**\n\n{st.session_state.hidden_message}")
-
