@@ -15,7 +15,7 @@ st.title("🖼️ Zamanlı Görsel Şifreleme (Streamlit)")
 # ----------------------------- Session State (Oturum Durumu) -----------------------------
 def init_state():
     """Tüm oturum durumlarını başlatır ve varsayılanları atar."""
-    # Kararlı başlangıç değeri: Şu andan 5 dakika sonrası (Daha esnek bir varsayılan)
+    # Varsayılan başlangıç değeri: Şu andan 5 dakika sonrası 
     default_open_time = datetime.datetime.now() + datetime.timedelta(minutes=5)
     
     defaults = {
@@ -145,7 +145,6 @@ def create_sample_image_bytes():
 def encrypt_image_file(image_bytes, password, open_time_dt, secret_text, secret_key, allow_no_password, progress_bar):
     """Şifreleme işlemini yapar."""
     
-    # NONE HATASI İÇİN KATI KONTROL
     if open_time_dt is None:
         log("Hata: Açılma zamanı None olarak geldi. İşlem durduruldu.")
         st.error("Şifreleme sırasında kritik hata: Geçerli bir açılma zamanı alınamadı.")
@@ -277,8 +276,13 @@ with tab_encrypt:
     st.subheader("Yeni Bir Görseli Şifrele")
     
     # KULLANILABİLECEK MİNİMUM ZAMANI HESAPLA (Şu anki zamandan 1 dakika sonrası)
-    # Bu değer her zaman dinamik olarak hesaplanmalıdır.
     dynamic_min_value = datetime.datetime.now() + datetime.timedelta(minutes=1)
+
+    # GÜVENLİK KONTROLÜ: Eğer mevcut 'value' min_value'dan küçükse, otomatik olarak min_value'ya eşitle.
+    # Bu, form içinde AttributeError almayı engeller.
+    if st.session_state.encryption_start_time < dynamic_min_value:
+         st.session_state.encryption_start_time = dynamic_min_value
+         log("Güvenlik: Oturum zamanı minimum değerden küçüktü, otomatik olarak güncellendi.")
 
     with st.form("encrypt_form"):
         uploaded_file = st.file_uploader(
@@ -301,12 +305,12 @@ with tab_encrypt:
         st.markdown("**Açılma Zamanı Ayarları**")
         
         # --- HIZLI ZAMAN AYARLAMA BUTONLARI ---
-        # Üçüncü bir sütun eklendi
-        col_time_a, col_time_b, col_time_c = st.columns([1, 1, 1])
+        col_time_a, col_time_b, col_time_c = st.columns(3)
         
         if col_time_a.button("Şimdi + 5 Dakika", key="set_5min_btn", use_container_width=True):
             log("Açılma zamanı 5 dakika sonraya ayarlandı.")
             st.session_state.encryption_start_time = datetime.datetime.now() + datetime.timedelta(minutes=5)
+            # Rerunu form dışında tetiklemek daha stabil
             st.rerun()
 
         if col_time_b.button("Şimdi + 1 Gün", key="set_1day_btn", use_container_width=True):
@@ -314,32 +318,22 @@ with tab_encrypt:
             st.session_state.encryption_start_time = datetime.datetime.now() + datetime.timedelta(days=1)
             st.rerun()
 
-        if col_time_c.button("Şimdi + 5 Dk (Yenile)", key="set_default_btn", use_container_width=True):
-            log("Açılma zamanı varsayılan değere (Şimdi + 5 Dk) güncellendi.")
-            st.session_state.encryption_start_time = datetime.datetime.now() + datetime.timedelta(minutes=5)
+        if col_time_c.button("Şimdi + 1 Saat", key="set_1hr_btn", use_container_width=True):
+            log("Açılma zamanı 1 saat sonraya ayarlandı.")
+            st.session_state.encryption_start_time = datetime.datetime.now() + datetime.timedelta(hours=1)
             st.rerun()
-
         # --- HIZLI ZAMAN AYARLAMA BUTONLARI SONU ---
         
         # AÇILMA ZAMANI (Datetime Input)
-        current_time_value = st.session_state.encryption_start_time
-
-        # GÜVENLİK KONTROLÜ: Eğer mevcut 'value' min_value'dan küçükse (ki bu Streamlit hatasına yol açar),
-        # value'yu otomatik olarak min_value'ya eşitle. Bu, AttributeError'u önler.
-        if current_time_value < dynamic_min_value:
-             st.session_state.encryption_start_time = dynamic_min_value
-             current_time_value = dynamic_min_value
-             log("Güvenlik: Oturum zamanı minimum değerden küçüktü, otomatik olarak güncellendi.")
-
         enc_time = st.datetime_input(
             "Açılma Zamanı (Bu zamandan önce açılamaz)", 
-            value=current_time_value,
+            value=st.session_state.encryption_start_time, # Güvenlik kontrolünden geçmiş değer kullanılır
             min_value=dynamic_min_value, 
             key="encryption_time_input_fixed", 
             help=f"Resmin şifresi sadece bu tarih ve saatten SONRA çözülebilir. Lütfen saati ve tarihi dikkatlice ayarlayın. Minimum ayar: {normalize_time(dynamic_min_value)}"
         )
         
-        # Kullanıcı değeri değiştirdiğinde, kararlı değeri de güncelleyelim.
+        # Kullanıcı değeri değiştirdiğinde, session state'i de güncelleyelim.
         if enc_time is not None:
              st.session_state.encryption_start_time = enc_time
         
