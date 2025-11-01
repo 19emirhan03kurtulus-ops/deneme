@@ -463,7 +463,13 @@ with tab_encrypt:
     # --- İndirme Bölümü (KRİTİK GÖRÜNÜRLÜK KONTROLÜ) ---
     if st.session_state.generated_enc_bytes and st.session_state.generated_meta_bytes:
         
-        base_name = os.path.splitext(uploaded_file.name)[0]
+        base_name = "encrypted_image"
+        try:
+            # uploaded_file may be None when using example; guard it
+            if uploaded_file is not None:
+                base_name = os.path.splitext(uploaded_file.name)[0]
+        except Exception:
+            pass
         
         # İki dosya da indirildiğinde bu bölümü gizle
         if st.session_state.is_png_downloaded and st.session_state.is_meta_downloaded:
@@ -522,14 +528,21 @@ with tab_decrypt:
     with col1:
         st.markdown("**1. Dosyaları Yükle**")
         # Dosya yükleyicileri sıfırlamak için dinamik key kullanıyoruz
-        enc_file = st.file_uploader("Şifreli resmi (.png) seçin", type="png", key=f"dec_enc_file_{st.session_state.reset_counter}")
-        meta_file = st.file_uploader("Meta dosyasını (.meta) seçin", type="meta", key=f"dec_meta_file_{st.session_state.reset_counter}")
+        enc_file = st.file_uploader("Şifreli resmi (.png) seçin", type=["png"], key=f"dec_enc_file_{st.session_state.reset_counter}")
+        # DÜZELTME: .meta, .json ve .txt uzantılarına izin veriyoruz (telefonlarda application/json hatasını önlemek için)
+        meta_file = st.file_uploader("Meta dosyasını (.meta) seçin", type=["meta", "json", "txt"], key=f"dec_meta_file_{st.session_state.reset_counter}")
         
         meta_data_available = False
         meta = {}
         if meta_file:
             try:
-                meta_content = meta_file.getvalue().decode('utf-8')
+                # meta_file.getvalue() -> bytes; decode güvenliği için try/except
+                raw = meta_file.getvalue()
+                # Eğer dosya JSON olarak gönderildiyse decodedir; bazı telefonlar content-type farklı gönderebilir
+                try:
+                    meta_content = raw.decode('utf-8')
+                except Exception:
+                    meta_content = raw.decode('latin-1')  # fallback
                 meta = json.loads(meta_content)
                 meta_data_available = True
                 
@@ -759,6 +772,3 @@ with tab_decrypt:
                     # Yanlış şifre girildiğinde input alanını temizleyebiliriz
                     st.session_state.modal_pass = "" 
                     st.rerun()
-
-
-
