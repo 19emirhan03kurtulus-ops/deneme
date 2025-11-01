@@ -528,7 +528,7 @@ with tab_decrypt:
     with col1:
         st.markdown("**1. Dosyaları Yükle**")
         # Dosya yükleyicileri sıfırlamak için dinamik key kullanıyoruz
-        enc_file = st.file_uploader("Şifreli resmi (.png) seçin", type=["png"], key=f"dec_enc_file_{st.session_state.reset_counter}")
+        enc_file = st.file_uploader("🔒 Şifreli Görsel (.png veya .jpg) Dosyasını Seç", type=["png", "jpg", "jpeg"]), key=f"dec_enc_file_{st.session_state.reset_counter}")
         # DÜZELTME: .meta, .json ve .txt uzantılarına izin veriyoruz (telefonlarda application/json hatasını önlemek için)
         meta_file = st.file_uploader("Meta dosyasını (.meta) seçin", type=["meta", "json", "txt"], key=f"dec_meta_file_{st.session_state.reset_counter}")
         
@@ -772,3 +772,4 @@ with tab_decrypt:
                     # Yanlış şifre girildiğinde input alanını temizleyebiliriz
                     st.session_state.modal_pass = "" 
                     st.rerun()
+
