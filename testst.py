@@ -25,6 +25,35 @@ st.set_page_config(
     layout="wide"
 )
 
+# ----------------------------- CSS Enjeksiyonu (Sağ Sütunu Boyamak İçin) -----------------------------
+# Sol kenar çubuğunun varsayılan rengi (muhtemelen açık gri tonu). 
+# Streamlit'in HTML yapısını kullanarak sağ sütuna bu rengi uygulamayı deniyoruz.
+# `st.columns` yapısında sağdaki sütun elementinin index'ini bulmalıyız. 
+# Genellikle ilk sütun (col_main_content) 1. div, ikinci sütun (col_right_panel) 2. div'dir.
+# Streamlit'in DOM yapısı değişebilir, ancak bu, genellikle çalışan bir yaklaşımdır.
+
+# Streamlit'in varsayılan arka plan renklerinden birini kullanıyoruz (örn: beyazımsı gri)
+# Bu renk, Streamlit'in kenar çubuğu rengine yakındır.
+CUSTOM_CSS = """
+<style>
+/* Sağ sütunun (col_right_panel) içine yerleştirilen container'a özel stil */
+/* Streamlit'in DOM yapısı nedeniyle, kenar çubuğu rengini (varsayılan: #fafafa) sağ sütun için uygulamak için bir container kullanıyoruz. */
+.right-panel-background > div {
+    /* Bu, sağ sütunun Streamlit tarafından oluşturulan ana div'idir. */
+    background-color: var(--st-sidebar-background-color, #fafafa); 
+    padding: 10px;
+    border-radius: 10px;
+}
+/* Log alanının arka planını beyaz yapalım ki, loglar daha iyi okunsun */
+#log_area textarea {
+    background-color: white;
+    color: black;
+}
+</style>
+"""
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+
 # ----------------------------- Session State (Oturum Durumu) -----------------------------
 
 # Başlangıç değerlerini tanımlayan yardımcı fonksiyon
@@ -298,14 +327,16 @@ def decrypt_image_in_memory(enc_image_bytes, password, open_time_str, image_hash
 def render_code_module():
     """Yeni Kod Geliştirme Alanını (Simülasyon) gösterir. Kullanıcının isteği üzerine tamamen boş bırakıldı."""
     # Kullanıcının isteği üzerine bu sayfa tamamen boş bırakılmıştır.
-    pass
+    st.title("Yeni Kod Geliştirme Alanı")
+    st.info("Bu sayfa, talep üzerine boş bırakılmıştır. Ana uygulamaya soldaki menüden dönebilirsiniz.")
 
 
 # ----------------------------- ARAYÜZ (UI) -----------------------------
 
 # --- Sidebar (Sol Kenar Çubuğu - Sadece Sayfa Seçimi) ---
 with st.sidebar:
-    st.image(create_sample_image_bytes(), use_container_width=True, caption="Örnek Resim Görünümü")
+    
+    # Örnek görsel buradan kaldırıldı (sağ panele taşındı)
     
     # GÖRÜNÜM SEÇİCİ
     st.subheader("Sayfa Seçimi")
@@ -323,59 +354,69 @@ with st.sidebar:
         # Görünüm değiştiğinde uygulamayı yeniden çalıştır
         st.rerun()
 
-    # Diğer tüm içerikler (Kontrol, Loglar, Yardım) ana alanın sağ sütununa taşındı.
-
 
 # ----------------------------- Ana Alan (Conditional Rendering) -----------------------------
 
 if st.session_state.current_view == 'cipher':
     
     # Ana içeriği (Sekmeler) ve Sağ Kontrol Panelini ayır
-    col_main_content, col_right_panel = st.columns([3, 1]) 
+    # Sağ sütun boyutunu biraz artırdık
+    col_main_content, col_right_panel = st.columns([2.5, 1]) 
 
-    # --- SAĞ KONTROL PANELİ (Kullanıcının İsteği Üzerine Sağda) ---
+    # --- SAĞ KONTROL PANELİ (Kullanıcının İsteği Üzerine Sağda - Arka Plan Rengi Eşitlendi) ---
     with col_right_panel:
         
-        st.subheader("Uygulama Kontrolü")
-        
-        # 1. Sıfırlama Butonu (Genel Reset)
-        st.button("🔄 Uygulamayı Sıfırla (GENEL RESET)", on_click=reset_app, help="Tüm oturum verilerini, görselleri ve logları temizler.", use_container_width=True)
-        
-        st.subheader("Örnek Resim")
-        st.info("Test için hızlıca bir resim oluşturun ve şifreleme sekmesinden indirin.")
-        
-        if st.button("Örnek Resim Oluştur", use_container_width=True):
-            img_bytes = create_sample_image_bytes()
-            # Çıktı state'lerini güncelle
-            st.session_state.generated_enc_bytes = img_bytes
-            st.session_state.generated_meta_bytes = None
+        # Arka plan rengini uygulamak için bir container içine alıyoruz
+        with st.container(border=False):
+            # CSS enjeksiyonu için özel bir sınıf ekleyelim (Bu sadece Streamlit DOM'unda bir wrapper olarak görev yapar)
+            st.markdown('<div class="right-panel-background">', unsafe_allow_html=True)
             
-            # Yeni bir şifreleme çıktısı olduğu için indirme durumunu sıfırla
-            st.session_state.is_png_downloaded = False
-            st.session_state.is_meta_downloaded = False
+            # 1. GÖRSELİ TAŞIDIK
+            st.image(create_sample_image_bytes(), use_container_width=True, caption="Örnek Resim Görünümü")
             
-            log("Test için örnek resim oluşturuldu. 'Şifrele' sekmesinden indirebilirsiniz.")
-            st.rerun() 
-        
-        with st.expander("Yardım (Kullanım Kılavuzu)"):
-            st.markdown(
-                """
-                **Saat Dilimi Notu:** Uygulama, açılma zamanını Türkiye saati (UTC+3) baz alarak hesaplar.
+            st.subheader("Uygulama Kontrolü")
+            
+            # 2. Sıfırlama Butonu (Genel Reset)
+            st.button("🔄 Uygulamayı Sıfırla (GENEL RESET)", on_click=reset_app, help="Tüm oturum verilerini, görselleri ve logları temizler.", use_container_width=True)
+            
+            st.subheader("Örnek Resim Oluşturma")
+            st.info("Test için hızlıca bir resim oluşturun ve şifreleme sekmesinden indirin.")
+            
+            if st.button("Örnek Şifresiz Resim Oluştur", use_container_width=True):
+                img_bytes = create_sample_image_bytes()
+                # Çıktı state'lerini güncelle
+                st.session_state.generated_enc_bytes = img_bytes
+                st.session_state.generated_meta_bytes = None
                 
-                **Şifreleme:**
-                1. `🔒 Şifrele` sekmesine gidin.
-                2. Bir resim dosyası yükleyin ve ayarları yapın.
-                3. `Şifrele` butonuna basın ve oluşan `.png` ile `.meta` dosyalarını **ayrı butonlarla** indirin.
+                # Yeni bir şifreleme çıktısı olduğu için indirme durumunu sıfırla
+                st.session_state.is_png_downloaded = False
+                st.session_state.is_meta_downloaded = False
                 
-                **Şifre Çözme:**
-                1. `🔓 Çöz` sekmesinde iki dosyayı da yükleyin.
-                2. Şifre (gerekliyse) girin ve `Çöz` butonuna basın. Resim, açılma zamanı geldiyse çözülür.
-                3. **Temizle Butonu:** Tüm yüklenen dosya, şifre ve sonuçları **her iki sekmede de** siler.
-                """
-            )
-        
-        st.subheader("İşlem Günlüğü")
-        st.text_area("Loglar", value=st.session_state.get('log', ''), height=300, disabled=True, key="log_area")
+                log("Test için örnek resim oluşturuldu. 'Şifrele' sekmesinden indirebilirsiniz.")
+                st.rerun() 
+            
+            with st.expander("Yardım (Kullanım Kılavuzu)"):
+                st.markdown(
+                    """
+                    **Saat Dilimi Notu:** Uygulama, açılma zamanını Türkiye saati (UTC+3) baz alarak hesaplar.
+                    
+                    **Şifreleme:**
+                    1. `🔒 Şifrele` sekmesine gidin.
+                    2. Bir resim dosyası yükleyin ve ayarları yapın.
+                    3. `Şifrele` butonuna basın ve oluşan `.png` ile `.meta` dosyalarını **ayrı butonlarla** indirin.
+                    
+                    **Şifre Çözme:**
+                    1. `🔓 Çöz` sekmesinde iki dosyayı da yükleyin.
+                    2. Şifre (gerekliyse) girin ve `Çöz` butonuna basın. Resim, açılma zamanı geldiyse çözülür.
+                    3. **Temizle Butonu:** Tüm yüklenen dosya, şifre ve sonuçları **her iki sekmede de** siler.
+                    """
+                )
+            
+            st.subheader("İşlem Günlüğü")
+            # st.text_area'yı doğrudan bu container içine alıyoruz
+            st.text_area("Loglar", value=st.session_state.get('log', ''), height=300, disabled=True, key="log_area")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
 
 
     # --- ANA İÇERİK (Şifrele/Çöz Sekmeleri) ---
