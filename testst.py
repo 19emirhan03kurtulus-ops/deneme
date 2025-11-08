@@ -25,29 +25,70 @@ st.set_page_config(
     layout="wide"
 )
 
-# ----------------------------- CSS Enjeksiyonu (Sağ Sütunu Boyamak İçin) -----------------------------
-# Sol kenar çubuğunun varsayılan rengi (muhtemelen açık gri tonu). 
-# Streamlit'in HTML yapısını kullanarak sağ sütuna bu rengi uygulamayı deniyoruz.
-# `st.columns` yapısında sağdaki sütun elementinin index'ini bulmalıyız. 
-# Genellikle ilk sütun (col_main_content) 1. div, ikinci sütun (col_right_panel) 2. div'dir.
-# Streamlit'in DOM yapısı değişebilir, ancak bu, genellikle çalışan bir yaklaşımdır.
-
-# Streamlit'in varsayılan arka plan renklerinden birini kullanıyoruz (örn: beyazımsı gri)
-# Bu renk, Streamlit'in kenar çubuğu rengine yakındır.
+# ----------------------------- MODERN CSS ENJEKSİYONU -----------------------------
+# Uygulamanın daha modern ve "havalı" görünmesi için CSS stilleri
 CUSTOM_CSS = """
 <style>
-/* Sağ sütunun (col_right_panel) içine yerleştirilen container'a özel stil */
-/* Streamlit'in DOM yapısı nedeniyle, kenar çubuğu rengini (varsayılan: #fafafa) sağ sütun için uygulamak için bir container kullanıyoruz. */
-.right-panel-background > div {
-    /* Bu, sağ sütunun Streamlit tarafından oluşturulan ana div'idir. */
-    background-color: var(--st-sidebar-background-color, #fafafa); 
-    padding: 10px;
-    border-radius: 10px;
+/* 1. GENEL STİL İYİLEŞTİRMELERİ (Streamlit'in Genel Yapısını Hedefleme) */
+
+/* Ana içerik alanına hafif bir gölge ve yuvarlaklık verelim */
+.stApp > header {
+    background-color: transparent; /* Üst başlığı şeffaf yap */
 }
-/* Log alanının arka planını beyaz yapalım ki, loglar daha iyi okunsun */
+
+/* Tüm butonlar için modern bir stil */
+.stButton>button {
+    border-radius: 0.75rem; /* Daha belirgin yuvarlaklık (lg) */
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06); /* Yumuşak gölge */
+    transition: all 0.3s ease;
+    border-width: 0px; /* Varsayılan border'ı kaldır */
+}
+
+/* Butonlara hover efekti */
+.stButton>button:hover {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1); /* Hover'da daha belirgin gölge */
+    transform: translateY(-2px); /* Hafif yukarı kalkma efekti */
+}
+
+/* 2. SAĞ PANEL İYİLEŞTİRMELERİ (Kenar Çubuğu Taklidi) */
+
+/* Sağ sütunun arka plan rengini ve stilini güncelleyelim */
+.right-panel-background > div {
+    background-color: var(--st-sidebar-background-color, #f0f2f6); /* Sidebar rengine yakın ton */
+    padding: 1.5rem; /* Daha fazla padding */
+    border-radius: 1rem; /* Daha yuvarlak köşeler */
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); /* Derin gölge */
+}
+
+/* Log alanının arka planını beyaz, yuvarlak köşeli ve gölgeli yapalım */
 #log_area textarea {
     background-color: white;
     color: black;
+    border-radius: 0.5rem;
+    box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+    padding: 10px;
+}
+
+/* 3. İNDİRME BUTONLARI VE SEKMELER */
+
+/* Download butonlarını da aynı modern stilde tutalım */
+.stDownloadButton>button {
+    background-color: #4CAF50 !important; /* Yeşil ton */
+    color: white !important;
+}
+.stDownloadButton>button:hover {
+    background-color: #45a049 !important;
+}
+
+/* Uyarı ve Başarı kutularını (info, success) daha yuvarlak yapalım */
+div[data-testid="stAlert"] {
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+/* Sekmelerin (Tabs) altındaki içeriğe de hafif bir padding verelim */
+.stTabs [data-testid="stVerticalBlock"] {
+    padding-top: 1rem;
 }
 </style>
 """
@@ -222,12 +263,13 @@ def add_text_watermark(img: Image.Image, hidden_message: str) -> Image.Image:
 def create_sample_image_bytes():
     """Diske kaydetmek yerine hafızada (bytes) örnek resim oluşturur."""
     img = Image.new("RGB", (600,400), color=(70,130,180))
+    # Görseldeki gradient efekti simüle edelim
     for y in range(img.height):
         for x in range(img.width):
-            r = 70 + int(x/img.width*80)
-            g = 130 + int(y/img.height*40)
-            b = 180
-            img.putpixel((x,y), (r, g, b))
+            r = 70 + int(x/img.width*120)  # Kırmızı tonu artır
+            g = 130 + int(y/img.height*50) # Yeşil tonu artır
+            b = 180 + int(x/img.width*30)  # Mavi tonu da ekle
+            img.putpixel((x,y), (r % 256, g % 256, b % 256))
     
     img_byte_arr = io.BytesIO()
     img.save(img_byte_arr, format='PNG')
@@ -336,7 +378,30 @@ def render_code_module():
 # --- Sidebar (Sol Kenar Çubuğu - Sadece Sayfa Seçimi) ---
 with st.sidebar:
     
-    # Örnek görsel buradan kaldırıldı (sağ panele taşındı)
+    # Görseldeki gibi bir görsel placeholder'ı ekleyelim (CSS ile uyumlu)
+    st.markdown("""
+        <div style="
+            border-radius: 1rem; 
+            overflow: hidden; 
+            margin-bottom: 1.5rem; 
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);">
+            
+            <div style="
+                height: 150px; 
+                background: linear-gradient(135deg, #4f46e5, #a855f7); /* Mor-İndigo gradient */
+                display: flex; 
+                align-items: center; 
+                justify-content: center;
+                color: white;
+                font-weight: bold;
+                font-size: 1.25rem;">
+                
+            </div>
+        </div>
+        <p style="text-align: center; color: var(--st-secondary-text-color); margin-top: -1rem; margin-bottom: 2rem;">
+            Örnek Resim Görünümü
+        </p>
+    """, unsafe_allow_html=True)
     
     # GÖRÜNÜM SEÇİCİ
     st.subheader("Sayfa Seçimi")
@@ -353,6 +418,11 @@ with st.sidebar:
         st.session_state.current_view = new_view
         # Görünüm değiştiğinde uygulamayı yeniden çalıştır
         st.rerun()
+
+    st.markdown("---")
+    
+    st.subheader("İşlem Günlüğü")
+    st.text_area("Loglar", value=st.session_state.get('log', ''), height=300, disabled=True, key="log_area")
 
 
 # ----------------------------- Ana Alan (Conditional Rendering) -----------------------------
@@ -371,18 +441,24 @@ if st.session_state.current_view == 'cipher':
             # CSS enjeksiyonu için özel bir sınıf ekleyelim (Bu sadece Streamlit DOM'unda bir wrapper olarak görev yapar)
             st.markdown('<div class="right-panel-background">', unsafe_allow_html=True)
             
-            # 1. GÖRSELİ TAŞIDIK
-            st.image(create_sample_image_bytes(), use_container_width=True, caption="Örnek Resim Görünümü")
+            # 1. GÖRSELİ TAŞIDIK (Streamlit'in kendi bileşenini kullanalım)
+            with st.container(border=True):
+                st.image(create_sample_image_bytes(), use_container_width=True, caption="Örnek Resim Önizlemesi")
             
             st.subheader("Uygulama Kontrolü")
             
             # 2. Sıfırlama Butonu (Genel Reset)
-            st.button("🔄 Uygulamayı Sıfırla (GENEL RESET)", on_click=reset_app, help="Tüm oturum verilerini, görselleri ve logları temizler.", use_container_width=True)
+            # Daha dikkat çekici bir stil
+            if st.button("🔄 Uygulamayı Sıfırla (GENEL RESET)", on_click=reset_app, help="Tüm oturum verilerini, görselleri ve logları temizler.", use_container_width=True):
+                pass # Buton basıldı, on_click halletti
+            
+            st.markdown("---")
             
             st.subheader("Örnek Resim Oluşturma")
             st.info("Test için hızlıca bir resim oluşturun ve şifreleme sekmesinden indirin.")
             
-            if st.button("Örnek Şifresiz Resim Oluştur", use_container_width=True):
+            # Buton stilini biraz daha farklı yapalım
+            if st.button("🖼️ Örnek Şifresiz Resim Oluştur", use_container_width=True):
                 img_bytes = create_sample_image_bytes()
                 # Çıktı state'lerini güncelle
                 st.session_state.generated_enc_bytes = img_bytes
@@ -395,7 +471,7 @@ if st.session_state.current_view == 'cipher':
                 log("Test için örnek resim oluşturuldu. 'Şifrele' sekmesinden indirebilirsiniz.")
                 st.rerun() 
             
-            with st.expander("Yardım (Kullanım Kılavuzu)"):
+            with st.expander("❓ Yardım (Kullanım Kılavuzu)"):
                 st.markdown(
                     """
                     **Saat Dilimi Notu:** Uygulama, açılma zamanını Türkiye saati (UTC+3) baz alarak hesaplar.
@@ -412,10 +488,6 @@ if st.session_state.current_view == 'cipher':
                     """
                 )
             
-            st.subheader("İşlem Günlüğü")
-            # st.text_area'yı doğrudan bu container içine alıyoruz
-            st.text_area("Loglar", value=st.session_state.get('log', ''), height=300, disabled=True, key="log_area")
-            
             st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -423,6 +495,12 @@ if st.session_state.current_view == 'cipher':
     with col_main_content:
         
         st.title("🖼️ Zamanlı Görsel Şifreleme (🇹🇷)")
+        st.markdown(
+            """
+            Bu uygulama, görsellerinizi belirlediğiniz bir tarih ve saate kadar kilitler. 
+            Çözmek için hem şifreli görseli hem de meta veriyi saklamanız gerekir.
+            """
+        )
         
         # --- Ana Alan (Sekmeler) ---
         tab_encrypt, tab_decrypt = st.tabs(["🔒 Şifrele", "🔓 Çöz"])
@@ -438,10 +516,10 @@ if st.session_state.current_view == 'cipher':
                 key=f"encrypt_file_uploader_{st.session_state.reset_counter}" 
             )
             
-            with st.form("encrypt_form"):
+            with st.form("encrypt_form", clear_on_submit=False):
                 
                 st.markdown("---")
-                st.markdown("**Şifreleme Ayarları**")
+                st.markdown("##### Şifreleme Ayarları")
                 
                 # Giriş değerlerini session state'ten alarak sıfırlama özelliğini destekliyoruz
                 enc_pass = st.text_input("Görsel Şifresi (Çözme için)", type="password", key="enc_pass_input", value=st.session_state.enc_pass_input)
@@ -453,7 +531,7 @@ if st.session_state.current_view == 'cipher':
                 enc_secret_key = st.text_input("Gizli Mesaj Şifresi (Filigranı görmek için)", type="password", placeholder="Filigranı açacak şifre", key="enc_secret_key_input", value=st.session_state.enc_secret_key_input)
                 
                 st.markdown("---")
-                st.markdown("**2. Açılma Zamanı Ayarı (Türkiye Saati ile)**")
+                st.markdown("##### 2. Açılma Zamanı Ayarı (Türkiye Saati ile)")
 
                 col_date, col_time = st.columns(2)
                 
@@ -496,7 +574,8 @@ if st.session_state.current_view == 'cipher':
                 if not time_format_valid and st.session_state.enc_time_str != '00:00':
                     st.error("Lütfen saati **HH:MM** formatında doğru girin. (Örn: 14:30)")
 
-                submitted = st.form_submit_button("🔒 Şifrele", use_container_width=True)
+                # Daha vurgulu bir submit butonu
+                submitted = st.form_submit_button("🔒 Şifrele ve Dosyaları Oluştur", type="primary", use_container_width=True)
 
             if submitted:
                 # Yeni şifreleme işlemi başladığında indirme durumunu sıfırla
@@ -560,11 +639,11 @@ if st.session_state.current_view == 'cipher':
                 # İki dosya da indirildiğinde bu bölümü gizle
                 if st.session_state.is_png_downloaded and st.session_state.is_meta_downloaded:
                     st.markdown("---")
-                    st.success("Tebrikler! Hem Şifreli Resim hem de Meta Veri başarıyla indirildi. Yeni bir şifreleme başlatabilirsiniz.")
+                    st.success("✅ Tebrikler! Hem Şifreli Resim hem de Meta Veri başarıyla indirildi. Yeni bir şifreleme başlatabilirsiniz.")
                 else:
                     st.markdown("---")
-                    st.subheader("İndirme Bağlantıları (Zorunlu İkili İndirme)")
-                    st.warning("Lütfen hem .png hem de .meta dosyasını indirin. İkisi de indirilince bu bölüm kaybolacaktır.")
+                    st.subheader("3. İndirme Bağlantıları (Zorunlu İkili İndirme)")
+                    st.warning("⚠️ Lütfen hem .png hem de .meta dosyasını indirin. İkisi de indirilince bu bölüm kaybolacaktır.")
 
                     col_png, col_meta = st.columns(2)
                     
@@ -608,11 +687,10 @@ if st.session_state.current_view == 'cipher':
         with tab_decrypt:
             st.subheader("Şifreli Bir Görseli Çöz")
             
-            col1, col2 = st.columns(2)
-            meta_data_placeholder = col1.empty()
-
+            col1, col2 = st.columns([1, 1.5])
+            
             with col1:
-                st.markdown("**1. Dosyaları Yükle**")
+                st.markdown("##### 1. Dosyaları Yükle")
                 # Dosya yükleyicileri sıfırlamak için dinamik key kullanıyoruz
                 enc_file = st.file_uploader("Şifreli resmi (.png) seçin", type=["png"], key=f"dec_enc_file_{st.session_state.reset_counter}")
                 # DÜZELTME: .meta, .json ve .txt uzantılarına izin veriyoruz (telefonlarda application/json hatasını önlemek için)
@@ -620,68 +698,74 @@ if st.session_state.current_view == 'cipher':
                 
                 meta_data_available = False
                 meta = {}
-                if meta_file:
-                    try:
-                        # meta_file.getvalue() -> bytes; decode güvenliği için try/except
-                        raw = meta_file.getvalue()
-                        # Eğer dosya JSON olarak gönderildiyse decodedir; bazı telefonlar content-type farklı gönderebilir
+                ot_dt = None
+                
+                # Meta Veri Önizlemesi (col1'e taşındı)
+                with st.container(border=True):
+                    st.markdown("##### Açılma Zamanı Durumu")
+                    if meta_file:
                         try:
-                            meta_content = raw.decode('utf-8')
-                        except Exception:
-                            meta_content = raw.decode('latin-1')  # fallback
-                        meta = json.loads(meta_content)
-                        meta_data_available = True
-                        
-                        open_time_str = meta.get("open_time", "Bilinmiyor")
-                        # Meta veriden okunan zamanı (TZ-naive) al ve TR saat dilimine dönüştür
-                        naive_ot_dt = datetime.datetime.strptime(open_time_str, "%Y-%m-%d %H:%M")
-                        ot_dt = naive_ot_dt.replace(tzinfo=TURKISH_TZ)
-                        
-                        # Şu anki zamanı TR saat dilimiyle al
-                        now_tr = datetime.datetime.now(TURKISH_TZ)
-                        # Açılma kontrolü için saniyeleri sıfırla
-                        now_check = now_tr.replace(second=0, microsecond=0)
-                        
-                        is_open = "🔓 AÇILABİLİR" if now_check >= ot_dt else "🔒 KİLİTLİ"
-                        color = "green" if now_check >= ot_dt else "red"
+                            # meta_file.getvalue() -> bytes; decode güvenliği için try/except
+                            raw = meta_file.getvalue()
+                            try:
+                                meta_content = raw.decode('utf-8')
+                            except Exception:
+                                meta_content = raw.decode('latin-1')  # fallback
+                            meta = json.loads(meta_content)
+                            meta_data_available = True
+                            
+                            open_time_str = meta.get("open_time", "Bilinmiyor")
+                            # Meta veriden okunan zamanı (TZ-naive) al ve TR saat dilimine dönüştür
+                            naive_ot_dt = datetime.datetime.strptime(open_time_str, "%Y-%m-%d %H:%M")
+                            ot_dt = naive_ot_dt.replace(tzinfo=TURKISH_TZ)
+                            
+                            # Şu anki zamanı TR saat dilimiyle al
+                            now_tr = datetime.datetime.now(TURKISH_TZ)
+                            # Açılma kontrolü için saniyeleri sıfırla
+                            now_check = now_tr.replace(second=0, microsecond=0)
+                            
+                            is_open = "🔓 AÇILABİLİR" if now_check >= ot_dt else "🔒 KİLİTLİ"
+                            color = "green" if now_check >= ot_dt else "red"
 
-                        # Kalan süreyi hesapla ve göster
-                        if now_check < ot_dt:
-                            time_left = ot_dt - now_tr
-                            
-                            # Hesaplama: Gün, saat, dakika ve saniye
-                            days = time_left.days
-                            total_seconds = int(time_left.total_seconds())
-                            hours = total_seconds // 3600
-                            minutes = (total_seconds % 3600) // 60
-                            seconds = total_seconds % 60
-                            
-                            parts = []
-                            if days > 0: parts.append(f"**{days} gün**")
-                            if hours > 0: parts.append(f"**{hours} saat**")
-                            if minutes > 0 or not parts and seconds == 0: parts.append(f"**{minutes} dakika**")
-                            if seconds > 0 or not parts: parts.append(f"**{seconds} saniye**")
+                            # Kalan süreyi hesapla ve göster
+                            if now_check < ot_dt:
+                                time_left = ot_dt - now_tr
                                 
-                            
-                            if not parts:
-                                time_left_str = "Açılma zamanı saniyeler içinde bekleniyor..."
+                                # Hesaplama: Gün, saat, dakika ve saniye
+                                days = time_left.days
+                                total_seconds = int(time_left.total_seconds())
+                                hours = total_seconds // 3600
+                                minutes = (total_seconds % 3600) // 60
+                                
+                                parts = []
+                                if days > 0: parts.append(f"**{days} gün**")
+                                if hours > 0: parts.append(f"**{hours} saat**")
+                                if minutes > 0 or not parts: parts.append(f"**{minutes} dakika**")
+                                    
+                                
+                                if not parts:
+                                    time_left_str = "Açılma zamanı saniyeler içinde bekleniyor..."
+                                else:
+                                    time_left_str = "Kalan Süre: " + ", ".join(parts)
                             else:
-                                time_left_str = "Kalan Süre: " + ", ".join(parts)
-                        else:
-                            time_left_str = "Açılma zamanı geldi/geçti."
+                                time_left_str = "Açılma zamanı geldi/geçti."
 
-                        meta_data_placeholder.markdown(
-                            f"**Açılma Zamanı Bilgisi (Türkiye Saati):**\n\n"
-                            f"Bu dosya **<span style='color:{color}'>{open_time_str}</span>** tarihinde açılmak üzere ayarlanmıştır. Şu anki durumu: **{is_open}**\n\n"
-                            f"{time_left_str}", 
-                            unsafe_allow_html=True
-                        )
-                        
-                    except Exception as e:
-                        meta_data_placeholder.error(f"Meta dosya okuma/zaman hatası: {e}")
-                        log(f"Meta dosya önizleme hatası: {e}")
+                            st.markdown(
+                                f"Açılma Zamanı (TR): **<span style='color:{color}; font-weight: bold;'>{open_time_str}</span>**", 
+                                unsafe_allow_html=True
+                            )
+                            st.markdown(f"**Durum:** **<span style='color:{color};'>{is_open}</span>**", unsafe_allow_html=True)
+                            st.markdown(f"*{time_left_str}*")
+                            
+                        except Exception as e:
+                            st.error(f"Meta dosya okuma/zaman hatası: {e}")
+                            log(f"Meta dosya önizleme hatası: {e}")
+                    else:
+                        st.info("Lütfen bir meta dosyası yükleyin.")
 
-                st.markdown("**2. Şifreyi Gir**")
+
+                st.markdown("---")
+                st.markdown("##### 2. Şifreyi Gir ve Çöz")
                 # Giriş değerini session state'ten alarak sıfırlama özelliğini destekliyoruz
                 dec_pass = st.text_input("Görsel Şifresi (gerekliyse)", type="password", key="decrypt_pass", value=st.session_state.decrypt_pass)
                 
@@ -689,7 +773,7 @@ if st.session_state.current_view == 'cipher':
                 col_dec_btn, col_res_btn = st.columns([2, 1])
 
                 with col_dec_btn:
-                    if st.button("🔓 Çöz", use_container_width=True): 
+                    if st.button("🔓 Çöz", type="primary", use_container_width=True): 
                         # Çözme butonuna basıldığında tüm görsel ve mesaj durumlarını sıfırla
                         for k in ['decrypted_image', 'watermarked_image', 'is_message_visible', 'prompt_secret_key']:
                             st.session_state[k] = None
@@ -705,7 +789,7 @@ if st.session_state.current_view == 'cipher':
                         else:
                             try:
                                 # dec_pass değişkeni zaten st.session_state.decrypt_pass içindeki değeri tutar
-                                open_time_str = meta.get("open_time")
+                                
                                 allow_no = bool(meta.get("allow_no_password", False))
                                 stored_tag = meta.get("verify_tag")
                                 image_hash = meta.get("image_content_hash", "")
@@ -714,27 +798,19 @@ if st.session_state.current_view == 'cipher':
                                 st.session_state.secret_key_hash = meta.get("secret_key_hash", "")
 
                                 # 1. Zaman kontrolü
-                                # Meta veriden okunan zamanı (TZ-naive) al ve TR saat dilimine dönüştür
-                                naive_ot_dt = datetime.datetime.strptime(open_time_str, "%Y-%m-%d %H:%M")
-                                ot_dt = naive_ot_dt.replace(tzinfo=TURKISH_TZ)
-
+                                if ot_dt is None:
+                                    st.error("Zaman bilgisi okunamadı. Meta dosyasını kontrol edin.")
+                                    st.stop()
+                                    
                                 # Şu anki zamanı TR saat dilimiyle al ve kontrol için saniyeyi sıfırla
                                 now_tr = datetime.datetime.now(TURKISH_TZ)
                                 now_check = now_tr.replace(second=0, microsecond=0)
                                 
                                 if now_check < ot_dt:
                                     log("Hata: Henüz zamanı gelmedi.")
-                                    
-                                    time_left = ot_dt - now_tr
-                                    days = time_left.days
-                                    total_seconds = int(time_left.total_seconds())
-                                    hours = total_seconds // 3600
-                                    minutes = (total_seconds % 3600) // 60
-                                    
-                                    st.warning(f"Bu dosyanın açılmasına daha var. \n\nAçılma Zamanı: **{open_time_str}**\nKalan Süre: **{days} gün, {hours} saat, {minutes} dakika**")
+                                    st.warning(f"Bu dosyanın açılmasına daha var. Açılma Zamanı: **{normalize_time(ot_dt)}**")
                                 else:
                                     # 2. Şifre kontrolü
-                                    # Buradaki değeri widget'tan gelen (ve session state'te olan) değeri kullanarak alıyoruz.
                                     current_dec_pass = st.session_state.decrypt_pass 
                                     pw_to_use = "" if allow_no else current_dec_pass
                                     
@@ -748,7 +824,7 @@ if st.session_state.current_view == 'cipher':
                                         
                                         # 3. Çözme işlemi
                                         dec_img, key_hex = decrypt_image_in_memory(
-                                            enc_image_bytes, pw_to_use, open_time_str, image_hash, progress_bar
+                                            enc_image_bytes, pw_to_use, normalize_time(ot_dt), image_hash, progress_bar
                                         )
                                         
                                         if dec_img is None:
