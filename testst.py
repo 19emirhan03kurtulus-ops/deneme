@@ -575,7 +575,7 @@ with tab_decrypt:
                     if hours > 0: parts.append(f"**{hours} saat**")
                     if minutes > 0 or not parts and seconds == 0: parts.append(f"**{minutes} dakika**")
                     if seconds > 0 or not parts: parts.append(f"**{seconds} saniye**")
-                         
+                        
                     
                     if not parts:
                         time_left_str = "Açılma zamanı saniyeler içinde bekleniyor..."
@@ -727,49 +727,55 @@ with tab_decrypt:
                     log("Gizli mesaj gizlendi.")
                     st.session_state.is_message_visible = False
                     st.session_state.prompt_secret_key = False
-                    st.session_state.watermarked_image = None
-                    st.rerun()
+            
             else:
-                if st.button("Gizli Mesajı Göster", use_container_width=True): 
-                    if st.session_state.secret_key_hash:
-                        log("Gizli mesaj şifresi isteniyor...")
-                        st.session_state.prompt_secret_key = True
-                        st.rerun()
-                    else:
-                        log("Gizli mesaj (şifresiz) gösteriliyor.")
-                        st.session_state.watermarked_image = add_text_watermark(
-                            st.session_state.decrypted_image, 
-                            st.session_state.hidden_message
-                        )
+                # Mesajı göster/şifre sor
+                if st.session_state.secret_key_hash:
+                    # Gizli Anahtar Girdisi
+                    st.session_state.prompt_secret_key = True
+                    st.markdown("**Gizli Mesaj Kilitli!**")
+                    
+                    # Dinamik olarak oluşturulan 'modal_pass' key'i ile input'u oluştur
+                    modal_pass = st.text_input(
+                        "Filigran Şifresi", 
+                        type="password", 
+                        key="modal_pass_input", 
+                        value=st.session_state.modal_pass,
+                        placeholder="Gizli mesajı görmek için şifreyi girin"
+                    )
+                    
+                    if st.button("Filigranı Göster", key="show_watermark_btn", use_container_width=True):
+                        # Şifreyi kontrol et
+                        entered_hash = hashlib.sha256(modal_pass.encode('utf-8')).hexdigest()
+                        
+                        if entered_hash == st.session_state.secret_key_hash:
+                            log("Filigran şifresi doğru. Filigran oluşturuluyor.")
+                            
+                            # Filigranı oluştur ve state'e kaydet
+                            wm_img = add_text_watermark(st.session_state.decrypted_image, st.session_state.hidden_message)
+                            st.session_state.watermarked_image = wm_img
+                            st.session_state.is_message_visible = True
+                            st.session_state.prompt_secret_key = False # Modalı kapat
+                            st.session_state.modal_pass = '' # Şifreyi temizle
+                            st.rerun()
+                        else:
+                            st.error("Yanlış Filigran Şifresi.")
+                            log("Hata: Yanlış filigran şifresi girildi.")
+
+                else:
+                    # Gizli Anahtar yoksa mesajı direkt göster (ve filigranı ekle)
+                    st.info("Gizli Mesaj Bulundu! Filigran koruması yok.")
+                    if st.button("Gizli Mesajı Göster", use_container_width=True):
+                        log("Gizli mesaj filigran olarak gösteriliyor.")
+                        wm_img = add_text_watermark(st.session_state.decrypted_image, st.session_state.hidden_message)
+                        st.session_state.watermarked_image = wm_img
                         st.session_state.is_message_visible = True
                         st.rerun()
 
-        if st.session_state.prompt_secret_key:
-            st.warning("Filigranı görmek için gizli mesaj şifresini girin:")
-            
-            with st.form("secret_key_form"):
-                # Widget oluşturulur. Değeri otomatik olarak st.session_state.modal_pass'a atanır.
-                entered_key = st.text_input("Gizli Mesaj Şifresi", type="password", key="modal_pass", value=st.session_state.modal_pass)
-                
-                submit_key = st.form_submit_button("Onayla")
-                
-            if submit_key:
-                # Değerin Hash'ini kontrol et
-                entered_hash = hashlib.sha256(st.session_state.modal_pass.encode('utf-8')).hexdigest()
-                if entered_hash == st.session_state.secret_key_hash:
-                    log("Gizli mesaj şifresi doğru. Filigran gösteriliyor.")
-                    st.session_state.watermarked_image = add_text_watermark(
-                        st.session_state.decrypted_image, 
-                        st.session_state.hidden_message
-                    )
-                    st.session_state.is_message_visible = True
-                    st.session_state.prompt_secret_key = False
-                    # Başarılı olduğunda yeniden yükleme (rerun) yapılması gerekir
-                    st.rerun() 
-                else:
-                    log("Hata: Gizli mesaj şifresi yanlış.")
-                    st.error("Gizli mesaj şifresi yanlış.")
-                    # Yanlış şifre girildiğinde input alanını temizleyebiliriz
-                    st.session_state.modal_pass = "" 
-                    st.rerun()
-
+    # Eğer sadece filigran şifresi isteniyorsa (prompt_secret_key True ise) ancak kullanıcı henüz çözme işlemi yapmadıysa, modalın durumunu koru.
+    # Ancak Streamlit'te bu karmaşık state yönetimini korumak zordur, bu yüzden `modal_pass` input'u zaten sürekli güncel tutuluyor.
+    # Eğer `modal_pass` input'unu daha iyi yönetmek istersen, kodu buraya ekleyebilirsin:
+    if st.session_state.prompt_secret_key and st.session_state.decrypted_image is not None and st.session_state.hidden_message:
+        # Eğer filigran gösterilmesi gerekiyorsa (yani şifre sorulmuşsa), `st.text_input`'un değerini güncel tut.
+        # Bu kısım zaten yukarıdaki `st.text_input(..., key="modal_pass_input", ...)` satırı tarafından hallediliyor.
+        pass
