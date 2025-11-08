@@ -378,29 +378,26 @@ def render_code_module():
 # --- Sidebar (Sol Kenar Çubuğu - Sadece Sayfa Seçimi) ---
 with st.sidebar:
     
-    # Görseldeki gibi bir görsel placeholder'ı ekleyelim (CSS ile uyumlu)
+    # GÖRSEL DÜZELTME: Markdown'ın HTML'yi render etmesi için yapıyı düzenledik ve metni içine taşıdık.
     st.markdown("""
         <div style="
             border-radius: 1rem; 
             overflow: hidden; 
-            margin-bottom: 1.5rem; 
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);">
-            
-            <div style="
-                height: 150px; 
-                background: linear-gradient(135deg, #4f46e5, #a855f7); /* Mor-İndigo gradient */
-                display: flex; 
-                align-items: center; 
-                justify-content: center;
-                color: white;
-                font-weight: bold;
-                font-size: 1.25rem;">
-                
-            </div>
-        </div>
-        <p style="text-align: center; color: var(--st-secondary-text-color); margin-top: -1rem; margin-bottom: 2rem;">
+            margin-bottom: 1rem; 
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+            /* Gradient Div'i */
+            height: 150px; 
+            background: linear-gradient(135deg, #4f46e5, #a855f7); /* Mor-İndigo gradient */
+            display: flex; 
+            flex-direction: column;
+            align-items: center; 
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 1.25rem;">
             Örnek Resim Görünümü
-        </p>
+            <span style="font-size: 0.75rem; font-weight: normal; opacity: 0.7;">(Placeholder)</span>
+        </div>
     """, unsafe_allow_html=True)
     
     # GÖRÜNÜM SEÇİCİ
@@ -422,6 +419,7 @@ with st.sidebar:
     st.markdown("---")
     
     st.subheader("İşlem Günlüğü")
+    # Log alanına özel stil için id eklendi
     st.text_area("Loglar", value=st.session_state.get('log', ''), height=300, disabled=True, key="log_area")
 
 
@@ -437,14 +435,38 @@ if st.session_state.current_view == 'cipher':
     with col_right_panel:
         
         # Arka plan rengini uygulamak için bir container içine alıyoruz
+        st.markdown('<div class="right-panel-background">', unsafe_allow_html=True)
+        
         with st.container(border=False):
-            # CSS enjeksiyonu için özel bir sınıf ekleyelim (Bu sadece Streamlit DOM'unda bir wrapper olarak görev yapar)
-            st.markdown('<div class="right-panel-background">', unsafe_allow_html=True)
-            
             # 1. GÖRSELİ TAŞIDIK (Streamlit'in kendi bileşenini kullanalım)
-            with st.container(border=True):
-                st.image(create_sample_image_bytes(), use_container_width=True, caption="Örnek Resim Önizlemesi")
+            # Sağ panelde de bir resim önizlemesi kullanıcının işine yarayabilir.
+            st.subheader("Sonuç Önizlemesi")
             
+            image_to_show_right = None
+            caption_right = "Şifrele/Çöz sekmesindeki son işlem sonucu burada görünür."
+
+            if st.session_state.is_message_visible and st.session_state.watermarked_image is not None:
+                image_to_show_right = st.session_state.watermarked_image
+                caption_right = "Çözülmüş Görüntü (Filigranlı)"
+            elif st.session_state.decrypted_image is not None:
+                image_to_show_right = st.session_state.decrypted_image
+                caption_right = "Çözülmüş Görüntü (Orijinal)"
+            elif st.session_state.generated_enc_bytes is not None and not st.session_state.generated_meta_bytes:
+                # Örnek resim oluşturulduysa (şifresiz hali)
+                image_to_show_right = Image.open(io.BytesIO(st.session_state.generated_enc_bytes))
+                caption_right = "Örnek Test Resmi"
+            elif st.session_state.generated_enc_bytes is not None:
+                 # Şifrelenmiş resim oluşturulduysa
+                image_to_show_right = Image.open(io.BytesIO(st.session_state.generated_enc_bytes))
+                caption_right = "Yeni Şifrelenmiş Resim"
+                
+            if image_to_show_right:
+                st.image(image_to_show_right, use_container_width=True, caption=caption_right)
+            else:
+                 st.info(caption_right)
+                
+            
+            st.markdown("---")
             st.subheader("Uygulama Kontrolü")
             
             # 2. Sıfırlama Butonu (Genel Reset)
