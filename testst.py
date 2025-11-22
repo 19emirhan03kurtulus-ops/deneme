@@ -335,9 +335,7 @@ def encrypt_image_file(image_bytes, password, open_time_dt, secret_text, secret_
     return enc_img_bytes, meta_json_bytes
 
 def decrypt_image_in_memory(enc_image_bytes, password, open_time_str, image_hash, progress_bar):
-
-
-
+    
     # --- YENİ SINAV SİSTEMİ FONKSİYONLARI (EKLEME) ---
 
 # Yeni Sınav Şifreleme Fonksiyonu (Güncel Tanım)
@@ -415,6 +413,13 @@ def decrypt_exam_file(encrypted_bytes, access_code, meta, progress_bar):
         log(f"Sınav çözme hatası: {e}")
         st.error(f"Sınav çözme sırasında beklenmedik bir hata oluştu: {e}")
         return None
+        def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, progress_bar, teacher_email, total_questions):
+# ^^^ BU SATIR EN SOL KENARDA BAŞLAMALIDIR (344. satırınız)
+    log("Sınav dosyası şifreleme başlatıldı.")
+#   ^^^^ BU SATIR İSE MUTLAKA BİR SEVİYE İÇERİDEN BAŞLAMALIDIR
+    try:
+#   ^^^^ Bu satır da içeriden başlamalıdır.
+# ...
     """Şifreli byte dizisini çözer."""
     try:
         img = Image.open(io.BytesIO(enc_image_bytes)).convert("RGB")
@@ -1273,6 +1278,7 @@ elif st.session_state.current_view == 'code':
             )
             
     render_code_module()
+
 
 
 
