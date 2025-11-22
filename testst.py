@@ -7,6 +7,8 @@ import time
 import base64
 
 # Callback fonksiyonları, download_button'da indirme durumunu kaydetmek için kullanılır
+def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, progress_bar, teacher_email, total_questions):
+    
 def set_png_downloaded():
     st.session_state['is_png_downloaded'] = True
     log("Şifreli PNG dosyası indirildi olarak işaretlendi.")
@@ -14,6 +16,15 @@ def set_png_downloaded():
 def set_meta_downloaded():
     st.session_state['is_meta_downloaded'] = True
     log("Meta verisi dosyası indirildi olarak işaretlendi.")
+meta = {
+            "version": 2.1, 
+            "type": "EXAM_LOCK",
+            "access_code_hash": hashlib.sha256(access_code.encode('utf-8')).hexdigest(),
+            "start_time": start_time_dt.strftime("%Y-%m-%d %H:%M"),
+            "end_time": end_time_dt.strftime("%Y-%m-%d %H:%M"),
+            "teacher_email": teacher_email,        # <--- YENİ EKLENTİ
+            "total_questions": total_questions,    # <--- YENİ EKLENTİ
+            "file_hash": hashlib.sha256(file_bytes).hexdigest(),
 
 # Türkiye/İstanbul saat dilimi tanımı (UTC+3)
 TURKISH_TZ = ZoneInfo("Europe/Istanbul")
@@ -1005,7 +1016,9 @@ elif st.session_state.current_view == 'code':
 
             # Erişim Kodu
             enc_access_code = st.text_input("Öğrenci Erişim Kodu (Şifre)", value="", key="exam_enc_access_code", help="Öğrencilerin sınavı indirebilmek için gireceği kod.")
+            enc_teacher_email = st.text_input("Öğretmen E-posta Adresi (Cevapların Gönderileceği)", key="exam_enc_email", help="Öğrenci cevaplarının toplanacağı e-posta adresi.")
             
+            enc_total_questions = st.number_input("Toplam Soru Sayısı", min_value=1, value=10, key="exam_enc_total_questions", help="Sınavda kaç soru olduğunu girin. Buna göre cevap kutusu oluşturulacaktır.")
             submitted = st.form_submit_button("🔒 Sınavı Kilitle ve Hazırla", type="primary", use_container_width=True)
 
         if submitted:
@@ -1191,5 +1204,6 @@ elif st.session_state.current_view == 'code':
             )
             
     render_code_module()
+
 
 
