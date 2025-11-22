@@ -5,7 +5,6 @@ import hashlib, datetime, random, os, json, io
 from zoneinfo import ZoneInfo
 import time 
 import base64
-
 # Callback fonksiyonları, download_button'da indirme durumunu kaydetmek için kullanılır
 def set_png_downloaded():
     st.session_state['is_png_downloaded'] = True
@@ -957,237 +956,117 @@ if st.session_state.current_view == 'cipher':
                                 st.rerun()
     
 elif st.session_state.current_view == 'code':
-    # YENİ SAYFA GÖRÜNÜMÜdef render_code_module():
-    """Yeni Kod Geliştirme Alanını (Zaman Ayarlı Sınav Sistemi) gösterir."""
-    
-    # Session state başlangıç değerlerini kontrol et
-    if 'exam_enc_bytes' not in st.session_state:
-        st.session_state.exam_enc_bytes = None
-    if 'exam_meta_bytes' not in st.session_state:
-        st.session_state.exam_meta_bytes = None
-    if 'exam_is_enc_downloaded' not in st.session_state:
-        st.session_state.exam_is_enc_downloaded = False
-    if 'exam_is_meta_downloaded' not in st.session_state:
-        st.session_state.exam_is_meta_downloaded = False
-    if 'exam_decrypted_bytes' not in st.session_state:
-        st.session_state.exam_decrypted_bytes = None
-    
-    st.markdown("## 👨‍🏫 Zaman Ayarlı Sınav Kilit Sistemi")
-    st.markdown("---")
+    # YENİ SAYFA GÖRÜNÜMÜ
+    render_code_module()
+    def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, progress_bar, teacher_email, total_questions):
+        # Meta Veri Hazırlama (Bu bloğa ekleyin)
+        meta = {
+            "version": 2.1, # Versiyonu güncelleyebilirsiniz
+            "type": "EXAM_LOCK",
+            "access_code_hash": hashlib.sha256(access_code.encode('utf-8')).hexdigest(),
+            "start_time": start_time_dt.strftime("%Y-%m-%d %H:%M"),
+            "end_time": end_time_dt.strftime("%Y-%m-%d %H:%M"),
+            "teacher_email": teacher_email,        # <--- YENİ EKLENTİ
+            "total_questions": total_questions,    # <--- YENİ EKLENTİ
+            "file_hash": hashlib.sha256(file_bytes).hexdigest(),
+            "verify_tag": hashlib.sha256(key_hex.encode("utf-8") + bytes(encrypted_bytes)).hexdigest()
+        }
+        # ... [Erişim Kodu (enc_access_code) inputundan hemen sonra ekleyin] ...
 
-    tab_teacher, tab_student = st.tabs(["Öğretmen (Sınav Hazırlama)", "Öğrenci (Sınavı Çözme/İndirme)"])
+            # --- YENİ EKLENEN KISIMLAR BAŞLANGIÇ ---
+            
+            enc_teacher_email = st.text_input("Öğretmen E-posta Adresi (Cevapların Gönderileceği)", key="exam_enc_email", help="Öğrenci cevaplarının toplanacağı e-posta adresi.")
+            
+            enc_total_questions = st.number_input("Toplam Soru Sayısı", min_value=1, value=10, key="exam_enc_total_questions", help="Sınavda kaç soru olduğunu girin. Buna göre cevap kutusu oluşturulacaktır.")
 
-    # --- ÖĞRETMEN SEKMESİ ---
-    with tab_teacher:
-        st.subheader("1. Sınav Dosyasını Yükle ve Kitle")
-        
-        with st.form("exam_encrypt_form", clear_on_submit=False):
-            
-            uploaded_file = st.file_uploader(
-                "Sınav dosyasını seçin (PDF, DOCX, TXT vb.)", 
-                type=["pdf", "docx", "txt", "zip"], 
-                key="exam_enc_file_upload"
-            )
-            
-            col_start, col_end = st.columns(2)
-            
-            # Başlangıç Zamanı
-            with col_start:
-                st.markdown("##### 🔑 Başlangıç Zamanı (Sınav Giriş)")
-                enc_date_start = st.date_input("Başlangıç Tarihi", datetime.datetime.now(TURKISH_TZ).date(), key="exam_enc_date_start")
-                enc_time_start = st.text_input("Başlangıç Saati (SS:DD)", datetime.datetime.now(TURKISH_TZ).strftime("%H:%M"), key="exam_enc_time_start", help="Örnek: 14:30")
-            
-            # Bitiş Zamanı
-            with col_end:
-                st.markdown("##### 🛑 Bitiş Zamanı (Sınav Kapanış)")
-                min_date_end = enc_date_start + datetime.timedelta(days=0)
-                enc_date_end = st.date_input("Bitiş Tarihi", enc_date_start, key="exam_enc_date_end", min_value=min_date_end)
-                enc_time_end = st.text_input("Bitiş Saati (SS:DD)", (datetime.datetime.now(TURKISH_TZ) + datetime.timedelta(hours=1)).strftime("%H:%M"), key="exam_enc_time_end", help="Örnek: 15:30")
-
-            # Erişim Kodu
-            enc_access_code = st.text_input("Öğrenci Erişim Kodu (Şifre)", value="", key="exam_enc_access_code", help="Öğrencilerin sınavı indirebilmek için gireceği kod.")
+            # --- YENİ EKLENEN KISIMLAR BİTİŞ ---
             
             submitted = st.form_submit_button("🔒 Sınavı Kilitle ve Hazırla", type="primary", use_container_width=True)
+        # ESKİ:
+# enc_bytes, meta_bytes = encrypt_exam_file(uploaded_file.getvalue(), enc_access_code, start_dt, end_dt, progress_bar)
 
-        if submitted:
-            st.session_state.exam_is_enc_downloaded = False
-            st.session_state.exam_is_meta_downloaded = False
-            st.session_state.exam_decrypted_bytes = None
-            
-            try:
-                time_format_valid = True
-                try:
-                    start_dt_naive = datetime.datetime.strptime(f"{enc_date_start} {enc_time_start}", "%Y-%m-%d %H:%M")
-                    end_dt_naive = datetime.datetime.strptime(f"{enc_date_end} {enc_time_end}", "%Y-%m-%d %H:%M")
-                except ValueError:
-                    time_format_valid = False
-                
-                if not time_format_valid:
-                    st.warning("Lütfen zaman formatlarını düzeltin (SS:DD).")
-                    st.stop()
-                
-                start_dt = start_dt_naive.replace(tzinfo=TURKISH_TZ).replace(second=0, microsecond=0)
-                end_dt = end_dt_naive.replace(tzinfo=TURKISH_TZ).replace(second=0, microsecond=0)
-                
-                if not uploaded_file:
-                    st.error("Lütfen önce bir sınav dosyası yükleyin.")
-                elif not enc_access_code:
-                    st.error("Lütfen bir erişim kodu belirleyin.")
-                elif end_dt <= start_dt:
-                    st.error("Bitiş zamanı, başlangıç zamanından sonra olmalıdır.")
-                else:
-                    progress_bar = st.progress(0, text="Sınav Şifreleniyor...")
-                    
-                    enc_bytes, meta_bytes = encrypt_exam_file(
-                        uploaded_file.getvalue(), enc_access_code, start_dt, end_dt, progress_bar
-                    )
-                    
-                    if enc_bytes and meta_bytes:
-                        st.success(f"Sınav Başarıyla Hazırlandı! Başlangıç: **{start_dt.strftime('%d.%m.%Y %H:%M')}** | Bitiş: **{end_dt.strftime('%d.%m.%Y %H:%M')}**")
-                        st.session_state.exam_enc_bytes = enc_bytes
-                        st.session_state.exam_meta_bytes = meta_bytes
-                    else:
-                        st.error("Sınav kitleme sırasında bir hata oluştu.")
+# YENİ (Argümanları ekleyin):
+enc_bytes, meta_bytes = encrypt_exam_file(
+    uploaded_file.getvalue(), enc_access_code, start_dt, end_dt, progress_bar, 
+    enc_teacher_email, int(enc_total_questions) # Yeni argümanlar
+)
+# --- Öğrenci sekmesindeki 'if st.session_state.exam_decrypted_bytes:' bloğunu bununla değiştirin ---
 
-            except Exception as e:
-                st.error(f"Beklenmedik bir hata oluştu: {e}")
-
-        # --- İndirme Bölümü (Öğretmen) ---
-        if st.session_state.exam_enc_bytes and st.session_state.exam_meta_bytes:
-            st.markdown("---")
-            st.subheader("2. Dosyaları İndir ve Paylaş")
-            st.warning("⚠️ Lütfen **hem Şifreli Sınav Dosyasını** hem de **Sınav Meta Verisini** indirip öğrencilerinizle paylaşın.")
-            
-            base_name = os.path.splitext(uploaded_file.name)[0] if uploaded_file else "sinav"
-            
-            col_enc, col_meta = st.columns(2)
-            
-            with col_enc:
-                st.download_button(
-                    label="📝 Şifreli Sınavı İndir",
-                    data=st.session_state.exam_enc_bytes,
-                    file_name=f"{base_name}_encrypted",
-                    mime="application/octet-stream",
-                    on_click=lambda: setattr(st.session_state, 'exam_is_enc_downloaded', True),
-                    disabled=st.session_state.exam_is_enc_downloaded,
-                    use_container_width=True
-                )
-            
-            with col_meta:
-                st.download_button(
-                    label="🔑 Meta Veriyi İndir (.meta)",
-                    data=st.session_state.exam_meta_bytes,
-                    file_name=f"{base_name}_encrypted.meta",
-                    mime="application/json",
-                    on_click=lambda: setattr(st.session_state, 'exam_is_meta_downloaded', True),
-                    disabled=st.session_state.exam_is_meta_downloaded,
-                    use_container_width=True
-                )
-            
-            if st.session_state.exam_is_enc_downloaded and st.session_state.exam_is_meta_downloaded:
-                 st.success("✅ İki dosya da indirildi. Öğrencilerinizle paylaşabilirsiniz.")
-
-    # --- ÖĞRENCİ SEKMESİ ---
-    with tab_student:
-        st.subheader("1. Sınav Dosyalarını Yükle")
-        
-        col_file, col_meta = st.columns(2)
-        
-        with col_file:
-            enc_file_student = st.file_uploader("Şifreli Sınav Dosyasını Yükle", type=["*"], key="exam_dec_enc_file")
-        with col_meta:
-            meta_file_student = st.file_uploader("Sınav Meta Verisini Yükle (.meta)", type=["meta", "json", "txt"], key="exam_dec_meta_file")
-            
-        access_code_student = st.text_input("Öğrenci Erişim Kodu", key="exam_dec_access_code", type="password")
-        
-        st.markdown("---")
-        
-        # Meta Veri Okuma ve Zaman Kontrolü
-        meta_data_available = False
-        meta = {}
-        is_active = False
-        
-        if meta_file_student:
-            try:
-                raw_meta = meta_file_student.getvalue()
-                meta_content = raw_meta.decode('utf-8')
-                meta = json.loads(meta_content)
-                
-                if meta.get("type") != "EXAM_LOCK":
-                    st.error("Yüklenen meta dosyası bir Sınav Kilidi dosyası değil.")
-                    meta_file_student = None
-                else:
-                    meta_data_available = True
-                    start_time_str = meta.get("start_time")
-                    end_time_str = meta.get("end_time")
-                    
-                    start_dt = datetime.datetime.strptime(start_time_str, "%Y-%m-%d %H:%M").replace(tzinfo=TURKISH_TZ)
-                    end_dt = datetime.datetime.strptime(end_time_str, "%Y-%m-%d %H:%M").replace(tzinfo=TURKISH_TZ)
-                    now_tr = datetime.datetime.now(TURKISH_TZ).replace(second=0, microsecond=0)
-                    
-                    is_too_early = now_tr < start_dt
-                    is_too_late = now_tr > end_dt
-                    is_active = start_dt <= now_tr <= end_dt
-                    
-                    st.info(f"Başlangıç: **{start_dt.strftime('%d.%m.%Y %H:%M')}** | Bitiş: **{end_dt.strftime('%d.%m.%Y %H:%M')}**")
-                    
-                    if is_too_early:
-                        time_left = start_dt - now_tr
-                        st.warning(f"🔓 Sınav Henüz Başlamadı! Kalan süre: **{time_left.days} gün {time_left.seconds//3600} saat {(time_left.seconds%3600)//60} dakika**")
-                    elif is_too_late:
-                        st.error("🛑 Sınav Sona Erdi! Dosyayı çözemezsiniz.")
-                    elif is_active:
-                        time_left = end_dt - now_tr
-                        st.success(f"✅ Sınav Aktif! Kalan süre: **{time_left.days} gün {time_left.seconds//3600} saat {(time_left.seconds%3600)//60} dakika**")
-                    
-                    
-            except Exception as e:
-                st.error("Meta dosya okuma hatası veya geçersiz format.")
-
-
-        if st.button("🔓 Sınavı İndir ve Başla", type="primary", use_container_width=True):
-            st.session_state.exam_decrypted_bytes = None
-            
-            if not enc_file_student or not meta_file_student:
-                st.error("Lütfen hem şifreli sınav dosyasını hem de meta veriyi yükleyin.")
-            elif not meta_data_available:
-                st.error("Yüklenen meta dosyası geçersiz veya okunamıyor.")
-            elif not access_code_student:
-                st.error("Lütfen erişim kodunu girin.")
-            elif not is_active:
-                st.error("Sınav aktif zaman aralığında değil. Lütfen başlangıç/bitiş zamanlarını kontrol edin.")
-            else:
-                entered_hash = hashlib.sha256(access_code_student.encode('utf-8')).hexdigest()
-                stored_hash = meta.get("access_code_hash")
-                
-                if entered_hash != stored_hash:
-                    st.error("Hata: Girilen erişim kodu hatalı.")
-                else:
-                    progress_bar = st.progress(0, text="Sınav Çözülüyor...")
-                    
-                    dec_bytes = decrypt_exam_file(
-                        enc_file_student.getvalue(), access_code_student, meta, progress_bar
-                    )
-                    
-                    if dec_bytes:
-                        st.success("Sınav Dosyası Başarıyla Çözüldü!")
-                        st.session_state.exam_decrypted_bytes = dec_bytes
-                    else:
-                        st.error("Çözme hatası. Lütfen dosyaları ve erişim kodunu kontrol edin.")
-        
-        # --- İndirme Bölümü (Öğrenci) ---
+        # --- Görüntüleme ve Cevaplama Bölümü (Öğrenci) ---
         if st.session_state.exam_decrypted_bytes:
             st.markdown("---")
-            st.subheader("2. Çözülmüş Dosyayı İndir")
+            st.subheader("2. Sınav Kağıdı ve Cevaplama")
             
-            original_file_name = enc_file_student.name if enc_file_student else "sinav"
-            file_extension = os.path.splitext(original_file_name)[1] or ".dat"
+            # Sınav süresi bittiyse sadece görüntüleme modunda açılmalı
+            is_active = start_dt <= now_tr <= end_dt # Bu değişkeni üst kısımdan (meta veri kontrolünden) almanız gerekir.
             
-            st.download_button(
-                label="📥 Çözülmüş Sınavı İndir",
-                data=st.session_state.exam_decrypted_bytes,
-                file_name=f"decrypted_exam{file_extension}",
-                mime="application/octet-stream",
-                use_container_width=True
-            )
-    render_code_module()
+            if is_active:
+                 st.success("✅ Sınav Aktif! Cevaplarınızı girip, zamanında gönderiniz.")
+            else:
+                 st.info("Sınav süresi dışında görüntüleme yapıyorsunuz. Cevap gönderimi devre dışıdır.")
+
+            # --- SINAV KAĞIDI GÖRÜNTÜLEME ---
+            st.markdown("#### Sınav İçeriği:")
+            
+            try:
+                 # Sınav kağıdının içeriğini gösterme (Varsayılan: Metin)
+                 decrypted_text = st.session_state.exam_decrypted_bytes.decode('utf-8', errors='ignore')
+                 st.text_area("Sınav Metni", value=decrypted_text, height=300, disabled=True)
+
+            except Exception:
+                 # Eğer metin değilse, Streamlit'in desteklediği formatı görüntülemeye çalışır
+                 st.image(io.BytesIO(st.session_state.exam_decrypted_bytes), caption="Sınav Görüntüsü", use_column_width=True)
+                 st.info("Eğer dosya bir PDF/DOCX ise, tarayıcınız tarafından görüntülenemeyebilir.")
+            
+            st.markdown("---")
+
+            # --- CEVAPLAMA BÖLÜMÜ ---
+            st.markdown("#### Cevaplarınızı Giriniz")
+            
+            # Yalnızca sınav aktifse cevaplama formu gösterilir
+            if is_active:
+                with st.form("exam_answer_form"):
+                    student_name = st.text_input("Adınız ve Soyadınız / Öğrenci Numaranız", key="student_name")
+                    
+                    # total_questions'ı meta veriden alıyoruz
+                    total_qs = meta.get("total_questions", 1) 
+                    
+                    answers = {}
+                    for i in range(1, total_qs + 1):
+                        answers[f"Q{i}"] = st.text_input(f"{i}. Sorunun Cevabı:", key=f"ans_{i}")
+                    
+                    answer_submitted = st.form_submit_button("✅ Cevapları Öğretmene Gönder", type="primary", use_container_width=True)
+                    
+                    if answer_submitted:
+                        teacher_mail = meta.get("teacher_email", "ogretmen@example.com")
+                        
+                        # 1. Email Body Hazırlama
+                        email_body = f"Sınav Cevapları - {time.ctime(time.time())}\n\n"
+                        email_body += f"Öğrenci: {student_name}\n"
+                        email_body += f"Sınav Adı/ID: {meta.get('file_hash')[:10]}...\n"
+                        email_body += f"Giriş Zamanı: {meta.get('start_time')}\n"
+                        email_body += "-" * 30 + "\n"
+                        
+                        for q, ans in answers.items():
+                            email_body += f"Soru {q[1:]}: {ans}\n"
+
+                        # 2. mailto linki oluşturma
+                        subject = f"SINAV CEVAPLARI - {student_name}"
+                        
+                        from urllib.parse import quote
+                        mailto_link = f"mailto:{teacher_mail}?subject={quote(subject)}&body={quote(email_body)}"
+                        
+                        # HTML kullanarak linki göster (Streamlit'in dışına çıkmak için)
+                        st.markdown(f"""
+                        <a href="{mailto_link}" target="_blank">
+                            <button style="background-color: #4CAF50; color: white; padding: 10px 24px; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;">
+                                📤 E-posta Göndericisini Aç ve Cevapları Yolla
+                            </button>
+                        </a>
+                        """, unsafe_allow_html=True)
+                        
+                        st.success("Cevaplarınız hazırlandı. Lütfen açılan e-posta uygulamasında **GÖNDER** tuşuna basın.")
+                        st.info("Eğer e-posta istemciniz açılmazsa, aşağıdaki metni kopyalayıp öğretmeninizin e-posta adresine manuel olarak gönderin.")
+                        st.code(email_body)
+            else:
+                 st.error("Cevap gönderme süresi sona ermiştir.") ()
