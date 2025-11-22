@@ -334,51 +334,15 @@ def encrypt_image_file(image_bytes, password, open_time_dt, secret_text, secret_
     progress_bar.progress(1.0, text="Tamamlandı!")
     return enc_img_bytes, meta_json_bytes
 
-def decrypt_image_in_memory(encrypted_bytes, password, meta, progress_bar):
-    """Şifrelenmiş baytları çözer ve PIL Image objesi olarak döndürür."""
+def decrypt_image_in_memory(enc_image_bytes, password, open_time_str, image_hash, progress_bar):
+    
+    """Şifreli byte dizisini çözer."""
     try:
-        progress_bar.progress(10, text="Meta veriler okunuyor...")
-        
-        open_time_str = meta.get("open_time")
-        nonce_bytes = bytes.fromhex(meta.get("nonce_hex"))
-        salt_bytes = bytes.fromhex(meta.get("salt_hex"))
-        
-        # 1. Anahtar Türetme
-        pw_to_use = password if password else "DEFAULT_PASS"
-        key = derive_key(pw_to_use, salt_bytes)
-        
-        progress_bar.progress(50, text="Görüntü çözülüyor...")
-        
-        # 2. Şifre Çözme (AES-GCM)
-        aesgcm = AESGCM(key)
-        aad = open_time_str.encode('utf-8') 
-
-        # Decrypt metodu, şifre, nonce, tag veya AAD'de herhangi bir uyuşmazlık varsa hata fırlatır.
-        decrypted_bytes = aesgcm.decrypt(nonce_bytes, encrypted_bytes, aad)
-        
-        # 3. PIL ile Resim Yükleme
-        try:
-            img_stream = io.BytesIO(decrypted_bytes)
-            dec_img = Image.open(img_stream)
-            # Resim başarılı açıldıysa ve dosya bütünlüğü hash'i varsa kontrol et (Opsiyonel)
-            # if meta.get("image_content_hash") and hashlib.sha256(decrypted_bytes).hexdigest() != meta.get("image_content_hash"):
-            #    log("Görüntü çözüldü ancak bütünlük hash'i uyuşmuyor.")
-            #    st.warning("Dosya başarıyla çözüldü ancak içeriğin orijinal olup olmadığı doğrulanamadı.")
-            
-        except Exception as img_e:
-            log(f"Çözülen baytlar geçerli resim değil: {img_e}")
-            st.error("Çözme başarılı oldu, ancak sonuçlar geçerli bir resim dosyası formatında değil.")
-            return None
-        
-        progress_bar.progress(100, text="Çözme Tamamlandı!")
-        return dec_img
-
+        img = Image.open(io.BytesIO(enc_image_bytes)).convert("RGB")
     except Exception as e:
-        # AESGCM.decrypt() AuthenticationTagMismatch veya başka bir kripto hatası fırlatır
-        log(f"Çözme Sırasında Kripto Hatası: {e}")
-        st.error("Kripto hatası oluştu. **Yanlış şifre** veya bozuk dosya olabilir.")
-        progress_bar.progress(100, text="Hata!")
-        return None
+        log(f"Hata: Şifreli resim dosyası okunamadı: {e}")
+        st.error(f"Hata: Yüklenen şifreli resim dosyası açılamadı: {e}")
+        return None, None
 
     w, h = img.size
     px = img.load()
@@ -1230,4 +1194,3 @@ elif st.session_state.current_view == 'code':
             )
             
     render_code_module()
-
