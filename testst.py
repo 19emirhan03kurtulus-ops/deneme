@@ -279,60 +279,37 @@ def create_sample_image_bytes():
 
 # ----------------------------- Çekirdek (encrypt/decrypt) -----------------------------
 
-def encrypt_image_file(image_bytes, password, open_time_dt, secret_text, secret_key, allow_no_password, progress_bar):
-    """Şifreleme işlemini yapar."""
-    try:
-        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    except Exception as e:
-        log(f"Hata: Resim dosyası okunamadı: {e}")
-        st.error(f"Hata: Yüklenen resim dosyası açılamadı: {e}")
-        return None, None
+# ... Diğer Kriptografi ve İşlem Fonksiyonları ...
 
-    w, h = img.size
-    px = img.load()
+# ----------------------------- SINAV SİSTEMİ YARDIMCI FONKSİYONLARI -----------------------------
+
+# BU FONKSİYONUN TANIMI BURADA OLMALIDIR.
+def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, progress_bar):
+    """Sınav dosyasını şifreler ve meta veriyi hazırlar (AES-GCM)."""
+    # ... fonksiyonun tüm içeriği ...
     
-    image_hash = hash_image_content(img)
-    # open_time_dt, zaten TZ-aware (İstanbul) olarak oluşturuldu. Meta veriye sadece metin olarak kaydet.
-    open_time_str = normalize_time(open_time_dt) 
-    
-    key_hex = generate_key(password, open_time_str, image_hash)
-    ks = create_keystream(key_hex, w, h)
+    # Tüm içeriğin burada bittiğinden emin olun.
+    pass # Ya da return satırı ile bitmeli.
 
-    # Şifreleme (XOR) işlemi
-    enc_img = Image.new("RGB", (w, h))
-    enc_px = enc_img.load()
-    i = 0
-    for y in range(h):
-        for x in range(w):
-            r, g, b = px[x, y]
-            enc_px[x, y] = (r ^ ks[i], g ^ ks[i+1], b ^ ks[i+2])
-            i += 3
-        if y % 10 == 0:
-            progress_bar.progress((y + 1) / h, text="Şifreleniyor...")
-            
-    # Şifreli resmi hafızada (bytes) hazırla
-    enc_img_byte_arr = io.BytesIO()
-    enc_img.save(enc_img_byte_arr, format='PNG')
-    enc_img_bytes = enc_img_byte_arr.getvalue()
+def decrypt_exam_file(encrypted_bytes, access_code, meta, progress_bar):
+    # ...
+    pass
 
-    # Doğrulama Etiketi (Verification Tag) oluştur
-    verify_tag = hashlib.sha256(key_hex.encode("utf-8") + img.tobytes()).hexdigest()
-    secret_key_hash = hashlib.sha256(secret_key.encode('utf-8')).hexdigest() if secret_key else ""
+# ------------------------------------------------------------------------------------------------
 
-    # Meta verisi oluştur
-    meta = {
-        "open_time": open_time_str, 
-        "allow_no_password": bool(allow_no_password), 
-        "verify_tag": verify_tag, 
-        "hidden_message": secret_text,
-        "image_content_hash": image_hash,
-        "secret_key_hash": secret_key_hash
-    }
-    
-    meta_json_bytes = json.dumps(meta, ensure_ascii=False, indent=2).encode('utf-8')
+# ... ANA UYGULAMA YAPISI ...
 
-    progress_bar.progress(1.0, text="Tamamlandı!")
-    return enc_img_bytes, meta_json_bytes
+def render_cipher_module():
+    # ...
+    pass
+
+# render_code_module bu fonksiyonlardan sonra gelir ve onları kullanır.
+def render_code_module():
+    # ...
+    # Bu fonksiyonun içinde encrypt_exam_file çağrılır:
+    # enc_bytes, meta_bytes = encrypt_exam_file(...)
+    # ...
+    pass
 
 def decrypt_image_in_memory(enc_image_bytes, password, open_time_str, image_hash, progress_bar):
     
@@ -1194,3 +1171,4 @@ elif st.session_state.current_view == 'code':
             )
             
     render_code_module()
+
