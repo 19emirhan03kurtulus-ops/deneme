@@ -278,7 +278,6 @@ def create_sample_image_bytes():
     return img_bytes
 
 # ----------------------------- Çekirdek (encrypt/decrypt) -----------------------------
-
 def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, progress_bar):
     try:
         # ... Başarılı Kod Bloğu ...
@@ -295,20 +294,24 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, progr
         # Hata durumunda bile, çağıran kodu tatmin etmek için İKİ DEĞER DÖNDÜRMELİDİR!
         return None, None # <-- BU SATIRIN DOĞRU VE EKSİKSİZ OLDUĞUNDAN EMİN OLUN
 
-# ----------------------------- SINAV SİSTEMİ YARDIMCI FONKSİYONLARI -----------------------------
 
-# BU FONKSİYONUN TANIMI BURADA OLMALIDIR.
-def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, progress_bar):
-    """Sınav dosyasını şifreler ve meta veriyi hazırlar (AES-GCM)."""
-    # ... fonksiyonun tüm içeriği ...
-    
-    # Tüm içeriğin burada bittiğinden emin olun.
-    pass # Ya da return satırı ile bitmeli.
 
-def decrypt_exam_file(encrypted_bytes, access_code, meta, progress_bar):
-    # ...
-    pass
+def encrypt_image_file(image_bytes, password, open_time_dt, secret_text, secret_key, allow_no_pass, progress_bar):
+    try:
+        # ... Başarılı Kod Bloğu ...
+        
+        progress_bar.progress(100, text="Şifreleme Tamamlandı!")
+        
+        # Başarılı dönüş:
+        return encrypted_data_with_tag, meta_bytes
 
+    except Exception as e:
+        log(f"Şifreleme Hatası: {e}")
+        progress_bar.progress(100, text="Hata oluştu!")
+        st.error(f"Şifreleme başarısız: {e}")
+        
+        # Hata durumunda bile İKİ DEĞER DÖNDÜRMELİDİR!
+        return None, None # <-- BU SATIRIN DOĞRU VE EKSİKSİZ OLDUĞUNDAN EMİN OLUN
 # ------------------------------------------------------------------------------------------------
 
 # ... ANA UYGULAMA YAPISI ...
@@ -1185,5 +1188,6 @@ elif st.session_state.current_view == 'code':
             )
             
     render_code_module()
+
 
 
