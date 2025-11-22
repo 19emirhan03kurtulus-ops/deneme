@@ -1189,30 +1189,5 @@ elif st.session_state.current_view == 'code':
                 mime="application/octet-stream",
                 use_container_width=True
             )
-            # Öğretmen Şifre Kontrolü
-    TEACHER_PASSWORD = "ogretmen120"
-    
-    if 'logged_in' not in st.session_state:
-        st.session_state.logged_in = False
-
-    if not st.session_state.logged_in:
-        st.markdown("## 🔑 Öğretmen Girişi")
-        with st.form("teacher_login_form"):
-            password_input = st.text_input("Giriş Şifresi:", type="password")
-            login_button = st.form_submit_button("Giriş Yap", type="primary")
-
-        if login_button:
-            if password_input == TEACHER_PASSWORD:
-                st.session_state.logged_in = True
-                st.rerun() # Sayfayı yenileyerek içerikleri göster
-            else:
-                st.error("Hatalı şifre. Lütfen tekrar deneyin.")
-        
-        # Giriş yapılmadıysa, buradan sonraki kod çalışmayacak.
-        return 
-    
-    # --- Giriş başarılı olduktan sonraki ana içerik BURADAN BAŞLAR ---
-    
-    # Session state başlangıç değerlerini kontrol et (Mevcut kodunuzdaki ilk kısım)
-    if 'exam_enc_bytes' not in st.session_state: ()
-
+            
+    render_code_module()
