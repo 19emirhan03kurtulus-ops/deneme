@@ -1214,5 +1214,4 @@ elif st.session_state.current_view == 'code':
     # --- Giriş başarılı olduktan sonraki ana içerik BURADAN BAŞLAR ---
     
     # Session state başlangıç değerlerini kontrol et (Mevcut kodunuzdaki ilk kısım)
-    if 'exam_enc_bytes' not in st.session_state:
-    render_code_module()
+    if 'exam_enc_bytes' not in st.session_state ()
