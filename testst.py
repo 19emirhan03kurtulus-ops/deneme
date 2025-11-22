@@ -6,11 +6,6 @@ import os
 import hashlib
 import io
 
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.backends import default_backend
-# NOT: AESGCM kullanımı daha modern ve doğru bir yöntemdir.
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -951,3 +946,4 @@ if st.session_state.current_view == 'cipher':
     render_cipher_module()
 elif st.session_state.current_view == 'code':
     render_code_module()
+
