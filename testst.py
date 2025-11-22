@@ -16,15 +16,6 @@ def set_png_downloaded():
 def set_meta_downloaded():
     st.session_state['is_meta_downloaded'] = True
     log("Meta verisi dosyası indirildi olarak işaretlendi.")
-meta = {
-            "version": 2.1, 
-            "type": "EXAM_LOCK",
-            "access_code_hash": hashlib.sha256(access_code.encode('utf-8')).hexdigest(),
-            "start_time": start_time_dt.strftime("%Y-%m-%d %H:%M"),
-            "end_time": end_time_dt.strftime("%Y-%m-%d %H:%M"),
-            "teacher_email": teacher_email,        # <--- YENİ EKLENTİ
-            "total_questions": total_questions,    # <--- YENİ EKLENTİ
-            "file_hash": hashlib.sha256(file_bytes).hexdigest(),
 
 # Türkiye/İstanbul saat dilimi tanımı (UTC+3)
 TURKISH_TZ = ZoneInfo("Europe/Istanbul")
@@ -1204,6 +1195,7 @@ elif st.session_state.current_view == 'code':
             )
             
     render_code_module()
+
 
 
 
