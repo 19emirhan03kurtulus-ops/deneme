@@ -279,7 +279,21 @@ def create_sample_image_bytes():
 
 # ----------------------------- Çekirdek (encrypt/decrypt) -----------------------------
 
-# ... Diğer Kriptografi ve İşlem Fonksiyonları ...
+def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, progress_bar):
+    try:
+        # ... Başarılı Kod Bloğu ...
+        
+        progress_bar.progress(100, text="Sınav Hazır!")
+        
+        # Başarılı dönüş:
+        return encrypted_bytes, meta_bytes
+
+    except Exception as e:
+        log(f"Sınav Şifreleme Hatası: {e}")
+        progress_bar.progress(100, text="Hata oluştu!")
+        
+        # Hata durumunda bile, çağıran kodu tatmin etmek için İKİ DEĞER DÖNDÜRMELİDİR!
+        return None, None # <-- BU SATIRIN DOĞRU VE EKSİKSİZ OLDUĞUNDAN EMİN OLUN
 
 # ----------------------------- SINAV SİSTEMİ YARDIMCI FONKSİYONLARI -----------------------------
 
@@ -1171,4 +1185,5 @@ elif st.session_state.current_view == 'code':
             )
             
     render_code_module()
+
 
