@@ -335,6 +335,9 @@ def encrypt_image_file(image_bytes, password, open_time_dt, secret_text, secret_
     return enc_img_bytes, meta_json_bytes
 
 def decrypt_image_in_memory(enc_image_bytes, password, open_time_str, image_hash, progress_bar):
+
+
+
     # --- YENİ SINAV SİSTEMİ FONKSİYONLARI (EKLEME) ---
 
 # Yeni Sınav Şifreleme Fonksiyonu (Güncel Tanım)
@@ -1270,6 +1273,7 @@ elif st.session_state.current_view == 'code':
             )
             
     render_code_module()
+
 
 
 
