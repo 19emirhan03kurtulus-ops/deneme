@@ -984,7 +984,7 @@ elif st.session_state.current_view == 'code':
             
             uploaded_file = st.file_uploader(
                 "Sınav dosyasını seçin (PDF, DOCX, TXT vb.)", 
-                type=["pdf", "docx", "txt", "zip"], 
+                type=["pdf", "docx", "txt", "zip", "png"], 
                 key="exam_enc_file_upload"
             )
             
@@ -1095,7 +1095,7 @@ elif st.session_state.current_view == 'code':
         with col_file:
             enc_file_student = st.file_uploader("Şifreli Sınav Dosyasını Yükle", type=["*"], key="exam_dec_enc_file")
         with col_meta:
-            meta_file_student = st.file_uploader("Sınav Meta Verisini Yükle (.meta)", type=["meta", "json", "txt"], key="exam_dec_meta_file")
+            meta_file_student = st.file_uploader("Sınav Meta Verisini Yükle (.meta)", type=["meta", "json", "txt" , "png"], key="exam_dec_meta_file")
             
         access_code_student = st.text_input("Öğrenci Erişim Kodu", key="exam_dec_access_code", type="password")
         
@@ -1191,3 +1191,4 @@ elif st.session_state.current_view == 'code':
             )
             
     render_code_module()
+
