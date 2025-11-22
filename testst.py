@@ -7,8 +7,6 @@ import time
 import base64
 
 # Callback fonksiyonları, download_button'da indirme durumunu kaydetmek için kullanılır
-def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, progress_bar, teacher_email, total_questions):
-    
 def set_png_downloaded():
     st.session_state['is_png_downloaded'] = True
     log("Şifreli PNG dosyası indirildi olarak işaretlendi.")
@@ -1195,6 +1193,7 @@ elif st.session_state.current_view == 'code':
             )
             
     render_code_module()
+
 
 
 
