@@ -336,90 +336,6 @@ def encrypt_image_file(image_bytes, password, open_time_dt, secret_text, secret_
 
 def decrypt_image_in_memory(enc_image_bytes, password, open_time_str, image_hash, progress_bar):
     
-    # --- YENİ SINAV SİSTEMİ FONKSİYONLARI (EKLEME) ---
-
-# Yeni Sınav Şifreleme Fonksiyonu (Güncel Tanım)
-def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, progress_bar, teacher_email, total_questions):
-    log("Sınav dosyası şifreleme başlatıldı.")
-    try:
-        # XOR şifreleme anahtarı, erişim kodundan ve başlangıç zamanının hash'inden türetilir.
-        key_source = access_code.encode("utf-8") + start_time_dt.strftime("%Y%m%d%H%M").encode("utf-8")
-        key_hex = hashlib.sha256(key_source).hexdigest()
-        
-        # Keystream oluşturma
-        file_len = len(file_bytes)
-        ks = create_keystream(key_hex, file_len, 1) 
-        
-        # XOR Şifreleme
-        encrypted_bytes = bytearray(file_bytes)
-        for i in range(file_len):
-            encrypted_bytes[i] ^= ks[i]
-            if i % (file_len // 10) == 0:
-                progress_bar.progress(i / file_len, text="Şifreleniyor...")
-        
-        # Meta Veri Hazırlama (Yeni Alanlar Dahil)
-        meta = {
-            "version": 2.1,
-            "type": "EXAM_LOCK",
-            "access_code_hash": hashlib.sha256(access_code.encode('utf-8')).hexdigest(),
-            "start_time": start_time_dt.strftime("%Y-%m-%d %H:%M"),
-            "end_time": end_time_dt.strftime("%Y-%m-%d %H:%M"),
-            "teacher_email": teacher_email,        # <--- YENİ
-            "total_questions": total_questions,    # <--- YENİ
-            "file_hash": hashlib.sha256(file_bytes).hexdigest(),
-            "verify_tag": hashlib.sha256(key_hex.encode("utf-8") + bytes(encrypted_bytes)).hexdigest()
-        }
-        meta_bytes = json.dumps(meta, indent=4).encode('utf-8')
-        
-        progress_bar.progress(1.0, text="Şifreleme Tamamlandı!")
-        return bytes(encrypted_bytes), meta_bytes
-
-    except Exception as e:
-        log(f"Sınav şifreleme hatası: {e}")
-        progress_bar.progress(1.0, text="Hata Oluştu!")
-        st.error(f"Sınav dosyasını şifrelerken bir hata oluştu: {e}")
-        return None, None
-
-# Yeni Sınav Çözme Fonksiyonu
-def decrypt_exam_file(encrypted_bytes, access_code, meta, progress_bar):
-    log("Sınav dosyası çözme başlatıldı.")
-    try:
-        start_time_str = meta.get("start_time")
-        
-        key_source = access_code.encode("utf-8") + datetime.datetime.strptime(start_time_str, "%Y-%m-%d %H:%M").strftime("%Y%m%d%H%M").encode("utf-8")
-        key_hex = hashlib.sha256(key_source).hexdigest()
-
-        file_len = len(encrypted_bytes)
-        ks = create_keystream(key_hex, file_len, 1)
-
-        decrypted_bytes = bytearray(encrypted_bytes)
-        for i in range(file_len):
-            decrypted_bytes[i] ^= ks[i]
-            if i % (file_len // 10) == 0:
-                progress_bar.progress(i / file_len, text="Çözülüyor...")
-
-        calculated_file_hash = hashlib.sha256(bytes(decrypted_bytes)).hexdigest()
-        stored_file_hash = meta.get("file_hash")
-        
-        if calculated_file_hash != stored_file_hash:
-             log("Çözme Hatası: Dosya bütünlüğü bozuk.")
-             st.error("Çözme Hatası: Yanlış erişim kodu girildi veya dosya bozulmuş.")
-             return None
-
-        progress_bar.progress(1.0, text="Çözme Tamamlandı!")
-        return bytes(decrypted_bytes)
-
-    except Exception as e:
-        log(f"Sınav çözme hatası: {e}")
-        st.error(f"Sınav çözme sırasında beklenmedik bir hata oluştu: {e}")
-        return None
-        def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, progress_bar, teacher_email, total_questions):
-# ^^^ BU SATIR EN SOL KENARDA BAŞLAMALIDIR (344. satırınız)
-    log("Sınav dosyası şifreleme başlatıldı.")
-#   ^^^^ BU SATIR İSE MUTLAKA BİR SEVİYE İÇERİDEN BAŞLAMALIDIR
-    try:
-#   ^^^^ Bu satır da içeriden başlamalıdır.
-# ...
     """Şifreli byte dizisini çözer."""
     try:
         img = Image.open(io.BytesIO(enc_image_bytes)).convert("RGB")
@@ -1278,11 +1194,3 @@ elif st.session_state.current_view == 'code':
             )
             
     render_code_module()
-
-
-
-
-
-
-
-
