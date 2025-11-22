@@ -92,7 +92,7 @@ def add_custom_css():
 def set_view(view):
     st.session_state.current_view = view
 
-# Görüntü şifreleme fonksiyonu
+# Görüntü şifreleme fonksiyonu (ORİJİNAL KOD)
 def encrypt_image_file(image_bytes, open_time_dt, key, progress_bar):
     log("Görüntü şifreleme başlatıldı.")
     try:
@@ -132,7 +132,7 @@ def encrypt_image_file(image_bytes, open_time_dt, key, progress_bar):
         st.error(f"Görüntüyü şifrelerken bir hata oluştu: {e}")
         return None, None
 
-# Görüntü çözme fonksiyonu
+# Görüntü çözme fonksiyonu (ORİJİNAL KOD)
 def decrypt_image_in_memory(encrypted_bytes, key, meta, progress_bar):
     log("Görüntü çözme başlatıldı.")
     try:
@@ -171,7 +171,7 @@ def decrypt_image_in_memory(encrypted_bytes, key, meta, progress_bar):
         st.error(f"Görüntü çözme sırasında beklenmedik bir hata oluştu: {e}")
         return None
 
-# --- Yeni Sınav Sistemi Fonksiyonları ---
+# --- YENİ SINAV SİSTEMİ FONKSİYONLARI (EKLEME) ---
 
 # Yeni Sınav Şifreleme Fonksiyonu
 def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, progress_bar):
@@ -259,6 +259,7 @@ def decrypt_exam_file(encrypted_bytes, access_code, meta, progress_bar):
 
 # --- Ana Uygulama Fonksiyonları ---
 
+# YENİ RENDER_CODE_MODULE FONKSİYONU (ESKİ BOŞ FONKSİYONUN YERİNİ ALDI)
 def render_code_module():
     """Yeni Kod Geliştirme Alanını (Zaman Ayarlı Sınav Sistemi) gösterir."""
     
@@ -341,11 +342,6 @@ def render_code_module():
                     st.error("Lütfen önce bir sınav dosyası yükleyin.")
                 elif not enc_access_code:
                     st.error("Lütfen bir erişim kodu belirleyin.")
-                elif start_dt < now_tr:
-                    # Bu kontrolü esnetebiliriz, öğretmen ileri bir tarih de belirleyebilir. 
-                    # Ancak güvenlik için başlangıç saatinin doğru ayarlandığından emin olmalıyız.
-                    # Basitçe, bitişin başlangıçtan sonra olduğunu kontrol edelim ve şimdiki zamanı uyarmayalım.
-                    pass 
                 elif end_dt <= start_dt:
                     st.error("Bitiş zamanı, başlangıç zamanından sonra olmalıdır.")
                 else:
@@ -519,7 +515,7 @@ def render_code_module():
             )
 
 
-# --- Streamlit Uygulama Akışı ---
+# --- Streamlit Uygulama Akışı (ORİJİNAL AKIŞ) ---
 
 # Başlangıç Ayarları
 st.set_page_config(
@@ -569,7 +565,7 @@ with st.sidebar:
 # --- Ana İçerik ---
 
 if st.session_state.current_view == 'cipher':
-    # ESKİ GÖRÜNÜM (Zamanlı Şifreleme Uygulaması)
+    # ESKİ GÖRÜNÜM (Zamanlı Şifreleme Uygulaması) - ORİJİNAL KOD
     st.markdown("# 🕒 Zaman Kilitli Görüntü Şifreleme")
     st.markdown("---")
     
@@ -802,5 +798,5 @@ if st.session_state.current_view == 'cipher':
 
 
 elif st.session_state.current_view == 'code':
-    # YENİ SAYFA GÖRÜNÜMÜ (Zaman Ayarlı Sınav Sistemi)
+    # YENİ SAYFA GÖRÜNÜMÜ (Zaman Ayarlı Sınav Sistemi) - YENİ KOD
     render_code_module()
