@@ -766,8 +766,8 @@ def render_code_module():
         
         col_file, col_meta = st.columns(2)
         
-        with col_file:
-            enc_file_student = st.file_uploader("Şifreli Sınav Dosyasını Yükle", type=["*"], key="exam_dec_enc_file")
+     with col_file:
+        enc_file_student = st.file_uploader("Şifreli Sınav Dosyasını Yükle", type=["*"], key="exam_dec_enc_file")
         with col_meta:
             meta_file_student = st.file_uploader("Sınav Meta Verisini Yükle (.meta)", type=["meta", "json", "txt"], key="exam_dec_meta_file")
             
@@ -902,3 +902,4 @@ if st.session_state.current_view == 'cipher':
     render_cipher_module()
 elif st.session_state.current_view == 'code':
     render_code_module()
+
