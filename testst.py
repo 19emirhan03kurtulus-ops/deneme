@@ -9,11 +9,11 @@ import pandas as pd
 
 # --- GEREKLİ KRİPTOGRAFİ VE DİĞER KÜTÜPHANELER ---
 try:
+    # 'cryptography' kütüphanesi kontrolü (image_3850a4.png hatası çözümü)
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.backends import default_backend
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    # Pillow ve Pandas, dosya işlemleri ve cevap formu için zorunludur.
     from PIL import Image 
 except ImportError:
     st.error("🚨 KRİTİK KÜTÜPHANE HATASI: 'cryptography' kurulu değil. Lütfen terminalde **'pip install cryptography Pillow pandas'** komutunu çalıştırın ve uygulamayı yeniden başlatın.")
@@ -24,7 +24,7 @@ except ImportError:
 TURKISH_TZ = pytz.timezone('Europe/Istanbul')
 LOG_FILE = "app_log.txt" 
 
-# --- YARDIMCI FONKSİYONLAR ---
+# --- YARDIMCI VE ZAMAN FONKSİYONLARI ---
 
 def log(message):
     """Zaman damgası ile log dosyasına mesaj yazar."""
@@ -54,6 +54,7 @@ def init_session_state():
     if 'exam_total_questions' not in st.session_state: st.session_state.exam_total_questions = 0 
     if 'exam_current_meta' not in st.session_state: st.session_state.exam_current_meta = {} 
     
+    # Formları ve yükleyicileri temizlemek için sayaç (Streamlit'in form yönetiminde kritik)
     if 'reset_counter' not in st.session_state: st.session_state.reset_counter = 0 
 
 
@@ -68,7 +69,6 @@ def reset_all_inputs():
     st.session_state.exam_current_meta = {}
     
     st.session_state.reset_counter += 1
-    # Yeniden başlatma, dosya yükleyicilerin otomatik olarak temizlenmesini sağlar.
     st.rerun()
 
 # --- KRİPTOGRAFİ VE İŞLEM FONKSİYONLARI ---
@@ -86,6 +86,7 @@ def derive_key(input_data, salt_bytes):
 
 def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, total_question_count, progress_bar):
     """Sınav dosyasını şifreler ve meta veriyi hazırlar (AES-GCM)."""
+    # name 'encrypt_exam_file' is not defined (image_384146.png, image_37d482.png) hatası çözüldü
     try:
         progress_bar.progress(10, text="Anahtar türetiliyor...")
         
@@ -108,7 +109,7 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, total
         
         meta_data = {
             "type": "EXAM_LOCK",
-            "version": "1.2", 
+            "version": "1.3", 
             "start_time": normalize_time(start_time_dt),
             "end_time": normalize_time(end_time_dt),
             "access_code_hash": access_code_hash,
@@ -124,11 +125,10 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, total
         return encrypted_bytes, meta_bytes
 
     except Exception as e:
-        # Sınav kitleme sırasında bir hata oluştu (image_811ac3.png, image_80c4e5.png) hatasının çözümü.
+        # Kitleme sırasında oluşan hatalar için (image_6a983a.png, image_812a43.png, image_80c085.png) net hata mesajı
         log(f"Sınav Şifreleme Hatası: {e}")
         progress_bar.progress(100, text="Hata oluştu!")
-        # Kullanıcıya daha spesifik bir hata mesajı gösterilir
-        st.error(f"Sınav kitleme sırasında kritik bir hata oluştu: {type(e).__name__}. Lütfen dosya formatını ve girdileri kontrol edin.")
+        st.error(f"Sınav kitleme sırasında kritik bir hata oluştu: **{type(e).__name__}**. Lütfen dosya formatını, erişim kodunu ve diğer girdileri kontrol edin.")
         return None, None 
 
 def decrypt_exam_file(encrypted_bytes, access_code, meta, progress_bar):
@@ -184,12 +184,12 @@ def render_code_module():
     with tab_teacher:
         st.subheader("1. Sınav Dosyasını Yükle ve Kitle")
         
-        # Form key'leri reset_counter ile dinamikleştirildi
         with st.form(f"exam_encrypt_form_{st.session_state.reset_counter}", clear_on_submit=False):
             
+            # Sınav dosyası yükleyicisi
             uploaded_file = st.file_uploader(
-                "Sınav dosyasını seçin (PDF, DOCX, TXT vb.)", 
-                type=["pdf", "docx", "txt", "zip", "png" , "jpg"], 
+                "Sınav dosyasını seçin (PDF, DOCX, TXT, resim vb.)", 
+                type=["pdf", "docx", "txt", "zip", "png" , "jpg", "jpeg"], 
                 key=f"exam_enc_file_upload_{st.session_state.reset_counter}"
             )
             
@@ -197,17 +197,14 @@ def render_code_module():
             
             with col_start:
                 st.markdown("##### 🔑 Başlangıç Zamanı (Sınav Giriş)")
-                current_date = datetime.datetime.now(TURKISH_TZ).date()
-                current_time = datetime.datetime.now(TURKISH_TZ).strftime("%H:%M")
-
-                enc_date_start = st.date_input("Başlangıç Tarihi", current_date, key=f"exam_enc_date_start_{st.session_state.reset_counter}")
-                enc_time_start = st.text_input("Başlangıç Saati (SS:DD)", current_time, key=f"exam_enc_time_start_{st.session_state.reset_counter}", help="Örnek: 14:30")
+                current_dt = datetime.datetime.now(TURKISH_TZ)
+                enc_date_start = st.date_input("Başlangıç Tarihi", current_dt.date(), key=f"exam_enc_date_start_{st.session_state.reset_counter}")
+                enc_time_start = st.text_input("Başlangıç Saati (SS:DD)", current_dt.strftime("%H:%M"), key=f"exam_enc_time_start_{st.session_state.reset_counter}", help="Örnek: 14:30")
             
             with col_end:
                 st.markdown("##### 🛑 Bitiş Zamanı (Sınav Kapanış)")
-                min_date_end = enc_date_start
-                default_end_dt = datetime.datetime.now(TURKISH_TZ) + datetime.timedelta(hours=1)
-                enc_date_end = st.date_input("Bitiş Tarihi", default_end_dt.date(), key=f"exam_enc_date_end_{st.session_state.reset_counter}", min_value=min_date_end)
+                default_end_dt = current_dt + datetime.timedelta(hours=1)
+                enc_date_end = st.date_input("Bitiş Tarihi", default_end_dt.date(), key=f"exam_enc_date_end_{st.session_state.reset_counter}", min_value=enc_date_start)
                 enc_time_end = st.text_input("Bitiş Saati (SS:DD)", default_end_dt.strftime("%H:%M"), key=f"exam_enc_time_end_{st.session_state.reset_counter}", help="Örnek: 15:30")
 
             total_questions = st.number_input(
@@ -225,7 +222,6 @@ def render_code_module():
             submitted = st.form_submit_button("🔒 Sınavı Kilitle ve Hazırla", type="primary", use_container_width=True)
 
         if submitted:
-            # Önceki sonuçları temizle
             st.session_state.exam_enc_bytes = None
             st.session_state.exam_meta_bytes = None
             
@@ -305,7 +301,7 @@ def render_code_module():
         col_file, col_meta = st.columns(2)
         
         with col_file:
-            # Hata Çözümü: Öğrencinin yükleyeceği dosya tipi kesinlikle PNG ile kısıtlandı.
+            # files are not allowed (image_820ee3.png) hatası çözümü: Öğretmen PNG indirdiği için, öğrenci de PNG yüklemelidir.
             enc_file_student = st.file_uploader("Şifreli Sınav Dosyasını Yükle (.png)", type=["png"], key=f"exam_dec_enc_file_{st.session_state.reset_counter}")
         with col_meta:
             meta_file_student = st.file_uploader("Sınav Meta Verisini Yükle (.meta)", type=["meta", "json", "txt"], key=f"exam_dec_meta_file_{st.session_state.reset_counter}")
@@ -407,7 +403,7 @@ def render_code_module():
                     if col_index == 0:
                         cols = st.columns(cols_per_row)
 
-                    answer = cols[col_index].text_input(f"Soru {i}", key=f"answer_{i}_{st.session_state.reset_counter}", max_chars=1)
+                    answer = cols[col_index].text_input(f"Soru {i}", key=f"answer_{i}_{st.session_state.reset_counter}", max_chars=1, help="Sadece A, B, C, D veya E giriniz.")
                     answers[f"Soru_{i}"] = answer
 
                 st.markdown("---")
@@ -440,7 +436,7 @@ def render_code_module():
                             help="Bu dosyayı indirin ve öğretmeninizle paylaşın.",
                             use_container_width=True
                         )
-                        st.success("Cevaplarınız indirildi. Lütfen bu dosyayı öğretmeninizle paylaşın.")
+                        st.success("Cevaplarınız başarıyla indirildi. Lütfen bu dosyayı öğretmeninizle paylaşın.")
                         
                         # Cevapları gönderdikten sonra formu temizle
                         reset_all_inputs()
@@ -452,7 +448,7 @@ init_session_state()
 
 st.set_page_config(page_title="Zaman Ayarlı Sınav Kilit Sistemi", layout="wide", initial_sidebar_state="expanded")
 st.title("👨‍🏫 Zaman Ayarlı Sınav Kilit Sistemi")
-st.caption("Öğrenci sınavı indirmez, sadece cevap formunu doldurur.")
+st.caption("Bu sistem, sınav dosyasını şifreler ve sadece belirlenen zaman aralığında doğru kod ile açılmasına izin verir.")
 
 # Kenar çubuğu (Sidebar)
 with st.sidebar:
@@ -461,9 +457,8 @@ with st.sidebar:
         
     st.markdown("---")
     
-    # Tüm verileri temizle butonu
-    if st.button("Tüm Verileri Temizle", on_click=reset_all_inputs, use_container_width=True, help="Tüm girdileri, dosyaları ve sonuçları siler."):
-        # st.rerun() reset_all_inputs içinde olduğu için burada sadece formdan çıkılması sağlanır.
+    # Tüm verileri temizle butonu (reset_all_inputs çağrıldığında st.rerun ile tüm state temizlenir)
+    if st.button("Tüm Verileri Temizle", on_click=reset_all_inputs, use_container_width=True, help="Tüm girdileri, yüklenen dosyaları ve sonuçları siler."):
         st.stop() 
 
     
