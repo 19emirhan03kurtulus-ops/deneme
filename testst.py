@@ -867,39 +867,32 @@ def render_code_module():
             st.success("Sınav dosyasını indirdikten sonra, cevaplarınızı öğretmeninizle paylaşmayı unutmayın!")
             
             
+# app.py'nin en üst kısımları
+# ... Diğer import'lar ...
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+# ... Diğer kriptografi import'ları ...
+
+# --- YARDIMCI FONKSİYONLAR ---
+def log(message):
+    # ...
+
+# --- KRİPTOGRAFİ VE İŞLEM FONKSİYONLARI ---
+def derive_key(input_data, salt_bytes):
+    # ...
+    
+def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, progress_bar): # BU FONKSİYON BURADA OLMALIDIR
+    # ...
+
+# --- ANA UYGULAMA YAPISI ---
+def render_cipher_module():
+    # ...
+    
+def render_code_module(): # BU FONKSİYON, encrypt_exam_file'ı çağırmadan önce tanımlanmalıdır.
+    # ...
+
 # --- ANA AKIŞ ---
-
 init_session_state()
-
-# Kenar çubuğu (Sidebar)
-with st.sidebar:
-    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/Istanbul_Time_Zone.svg/1200px-Istanbul_Time_Zone.svg.png", width=50)
-    st.markdown("## ⚙️ Uygulama Ayarları")
-    
-    view_option = st.radio(
-        "Modül Seçimi",
-        ('🖼️ Görsel Kilit (Time Lock)', '👨‍🏫 Sınav Kilit (Exam Lock)'),
-        key="app_mode_radio"
-    )
-    
-    if view_option == '🖼️ Görsel Kilit (Time Lock)':
-        st.session_state.current_view = 'cipher'
-    else:
-        st.session_state.current_view = 'code'
-        
-    st.markdown("---")
-    
-    st.button("Tüm Verileri Temizle", on_click=reset_all_inputs, use_container_width=True, help="Tüm girdileri ve sonuçları siler.")
-    
-    st.markdown("---")
-    st.markdown("##### 🇹🇷 Türk Saat Dilimi (UTC+03)")
-    now_tr = datetime.datetime.now(TURKISH_TZ).strftime("%d.%m.%Y %H:%M:%S")
-    st.write(f"Şu anki zaman: **{now_tr}**")
-
-
-# Ana İçerik
-if st.session_state.current_view == 'cipher':
-    new_var = render_cipher_module()
-elif st.session_state.current_view == 'code':
+if st.session_state.current_view == 'code':
     render_code_module()
+
 
