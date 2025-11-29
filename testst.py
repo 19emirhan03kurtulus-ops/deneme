@@ -7,16 +7,16 @@ import hashlib
 import io
 import pandas as pd
 
-# --- GEREKLİ KÜTÜPHANELER ---
-# ModuleNotFoundError (image_3850a4.png) hatası çözümü için kontrol
+# --- GEREKLİ KRİPTOGRAFİ VE DİĞER KÜTÜPHANELER ---
 try:
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.backends import default_backend
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    # Pillow ve Pandas, dosya işlemleri ve cevap formu için zorunludur.
     from PIL import Image 
 except ImportError:
-    st.error("🚨 KRİTİK KÜTÜPHANE HATASI: 'cryptography' kurulu değil. Lütfen terminalde **'pip install cryptography Pillow pandas'** komutunu çalıştırın.")
+    st.error("🚨 KRİTİK KÜTÜPHANE HATASI: 'cryptography' kurulu değil. Lütfen terminalde **'pip install cryptography Pillow pandas'** komutunu çalıştırın ve uygulamayı yeniden başlatın.")
     st.stop()
 
 
@@ -48,15 +48,12 @@ def parse_normalized_time(time_str):
 
 def init_session_state():
     """Streamlit session state'i başlatır."""
-    
-    # Sınav Modülü State'leri
     if 'exam_enc_bytes' not in st.session_state: st.session_state.exam_enc_bytes = None
     if 'exam_meta_bytes' not in st.session_state: st.session_state.exam_meta_bytes = None
     if 'exam_is_unlocked' not in st.session_state: st.session_state.exam_is_unlocked = False 
     if 'exam_total_questions' not in st.session_state: st.session_state.exam_total_questions = 0 
     if 'exam_current_meta' not in st.session_state: st.session_state.exam_current_meta = {} 
     
-    # Reset sayacı, dosya yükleyicilerin ve formların temizlenmesi için zorunludur.
     if 'reset_counter' not in st.session_state: st.session_state.reset_counter = 0 
 
 
@@ -71,7 +68,7 @@ def reset_all_inputs():
     st.session_state.exam_current_meta = {}
     
     st.session_state.reset_counter += 1
-    # Formların ve yükleyicilerin temizlenmesi için yeniden başlatma
+    # Yeniden başlatma, dosya yükleyicilerin otomatik olarak temizlenmesini sağlar.
     st.rerun()
 
 # --- KRİPTOGRAFİ VE İŞLEM FONKSİYONLARI ---
@@ -86,9 +83,6 @@ def derive_key(input_data, salt_bytes):
         backend=default_backend()
     )
     return kdf.derive(input_data.encode('utf-8'))
-
-# Hata Çözümü: name 'encrypt_exam_file' is not defined (image_384146.png)
-# Fonksiyonlar, çağrılmadan önce tanımlanmıştır.
 
 def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, total_question_count, progress_bar):
     """Sınav dosyasını şifreler ve meta veriyi hazırlar (AES-GCM)."""
@@ -110,7 +104,6 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, total
         
         progress_bar.progress(70, text="Meta veri hazırlanıyor...")
         
-        # Meta Veri Oluşturma
         access_code_hash = hashlib.sha256(access_code.encode('utf-8')).hexdigest()
         
         meta_data = {
@@ -131,10 +124,11 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, total
         return encrypted_bytes, meta_bytes
 
     except Exception as e:
+        # Sınav kitleme sırasında bir hata oluştu (image_811ac3.png, image_80c4e5.png) hatasının çözümü.
         log(f"Sınav Şifreleme Hatası: {e}")
         progress_bar.progress(100, text="Hata oluştu!")
-        # Sınav kitleme sırasında bir hata oluştu (image_812a43.png / image_6a983a.png) hatasının detayını yakalar.
-        st.error("Sınav kitleme sırasında bir hata oluştu. Lütfen dosya formatını ve girdileri kontrol edin.")
+        # Kullanıcıya daha spesifik bir hata mesajı gösterilir
+        st.error(f"Sınav kitleme sırasında kritik bir hata oluştu: {type(e).__name__}. Lütfen dosya formatını ve girdileri kontrol edin.")
         return None, None 
 
 def decrypt_exam_file(encrypted_bytes, access_code, meta, progress_bar):
@@ -286,7 +280,6 @@ def render_code_module():
             
             col_enc, col_meta = st.columns(2)
             
-            # Şifreli dosya için indirme butonu
             with col_enc:
                 st.download_button(
                     label="📝 Şifreli Sınav Dosyasını İndir (.png)",
@@ -296,7 +289,6 @@ def render_code_module():
                     use_container_width=True
                 )
             
-            # Meta veri için indirme butonu
             with col_meta:
                 st.download_button(
                     label="🔑 Meta Veriyi İndir (.meta)",
@@ -313,7 +305,7 @@ def render_code_module():
         col_file, col_meta = st.columns(2)
         
         with col_file:
-            # files are not allowed (image_820ee3.png) hatası çözümü: Yüklenecek dosya tipi kesinlikle PNG ile kısıtlandı.
+            # Hata Çözümü: Öğrencinin yükleyeceği dosya tipi kesinlikle PNG ile kısıtlandı.
             enc_file_student = st.file_uploader("Şifreli Sınav Dosyasını Yükle (.png)", type=["png"], key=f"exam_dec_enc_file_{st.session_state.reset_counter}")
         with col_meta:
             meta_file_student = st.file_uploader("Sınav Meta Verisini Yükle (.meta)", type=["meta", "json", "txt"], key=f"exam_dec_meta_file_{st.session_state.reset_counter}")
@@ -393,7 +385,6 @@ def render_code_module():
                     )
                     
                     if dec_bytes is not None:
-                        # Çözme başarılıysa, dosyayı indirmek yerine cevap formunu aç
                         st.session_state.exam_is_unlocked = True
                         st.success("Sınav kilidi başarıyla açıldı! Aşağıdaki cevap formunu doldurun.")
                         st.balloons()
@@ -472,6 +463,7 @@ with st.sidebar:
     
     # Tüm verileri temizle butonu
     if st.button("Tüm Verileri Temizle", on_click=reset_all_inputs, use_container_width=True, help="Tüm girdileri, dosyaları ve sonuçları siler."):
+        # st.rerun() reset_all_inputs içinde olduğu için burada sadece formdan çıkılması sağlanır.
         st.stop() 
 
     
