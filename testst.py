@@ -189,7 +189,7 @@ def render_code_module():
             # Sınav dosyası yükleyicisi
             uploaded_file = st.file_uploader(
                 "Sınav dosyasını seçin (PDF, DOCX, TXT, resim vb.)", 
-                type=["*"], 
+                type=["png"], 
                 key=f"exam_enc_file_upload_{st.session_state.reset_counter}"
             )
             
@@ -470,4 +470,5 @@ with st.sidebar:
 
 # Ana İçerik: Sadece Sınav Modülü
 render_code_module()
+
 
