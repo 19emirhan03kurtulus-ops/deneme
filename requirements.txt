@@ -1,5 +1,7 @@
 # requirements.txt
+cryptography
 streamlit
 Pillow
 pytz
 cryptography
+
