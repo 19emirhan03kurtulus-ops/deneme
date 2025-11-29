@@ -7,17 +7,16 @@ import hashlib
 import io
 import pandas as pd
 
-# Gerekli Kriptografi Kütüphaneleri
+# --- GEREKLİ KÜTÜPHANELER ---
+# ModuleNotFoundError (image_3850a4.png) hatası çözümü için kontrol
 try:
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.backends import default_backend
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    # Pillow kütüphanesi gerekli olmasa da genel bağımlılık listesinde bırakılabilir
     from PIL import Image 
 except ImportError:
-    # ModuleNotFoundError (image_3850a4.png) hatası çözümü için kullanıcıya bilgi verilir
-    st.error("Kütüphane Hatası: 'cryptography' kurulu değil. Lütfen terminalde 'pip install cryptography' komutunu çalıştırın.")
+    st.error("🚨 KRİTİK KÜTÜPHANE HATASI: 'cryptography' kurulu değil. Lütfen terminalde **'pip install cryptography Pillow pandas'** komutunu çalıştırın.")
     st.stop()
 
 
@@ -53,32 +52,27 @@ def init_session_state():
     # Sınav Modülü State'leri
     if 'exam_enc_bytes' not in st.session_state: st.session_state.exam_enc_bytes = None
     if 'exam_meta_bytes' not in st.session_state: st.session_state.exam_meta_bytes = None
-    if 'exam_is_enc_downloaded' not in st.session_state: st.session_state.exam_is_enc_downloaded = False
-    if 'exam_is_meta_downloaded' not in st.session_state: st.session_state.exam_is_meta_downloaded = False
-    if 'exam_decrypted_bytes' not in st.session_state: st.session_state.exam_decrypted_bytes = None
     if 'exam_is_unlocked' not in st.session_state: st.session_state.exam_is_unlocked = False 
     if 'exam_total_questions' not in st.session_state: st.session_state.exam_total_questions = 0 
     if 'exam_current_meta' not in st.session_state: st.session_state.exam_current_meta = {} 
     
+    # Reset sayacı, dosya yükleyicilerin ve formların temizlenmesi için zorunludur.
     if 'reset_counter' not in st.session_state: st.session_state.reset_counter = 0 
 
 
 def reset_all_inputs():
-    """Tüm girdileri ve sonuçları temizler."""
+    """Tüm girdileri ve sonuçları temizler ve uygulamayı yeniden başlatır."""
     log("Tüm girdi ve sonuçlar temizlendi (reset_all_inputs).")
     
-    # Sınav Modülü Reset
     st.session_state.exam_enc_bytes = None
     st.session_state.exam_meta_bytes = None
-    st.session_state.exam_is_enc_downloaded = False
-    st.session_state.exam_is_meta_downloaded = False
-    st.session_state.exam_decrypted_bytes = None
     st.session_state.exam_is_unlocked = False
     st.session_state.exam_total_questions = 0
     st.session_state.exam_current_meta = {}
     
     st.session_state.reset_counter += 1
-    # st.rerun() komutu reset_all_inputs çağrıldığında butondan hemen sonra çalıştırılmalı
+    # Formların ve yükleyicilerin temizlenmesi için yeniden başlatma
+    st.rerun()
 
 # --- KRİPTOGRAFİ VE İŞLEM FONKSİYONLARI ---
 
@@ -93,9 +87,8 @@ def derive_key(input_data, salt_bytes):
     )
     return kdf.derive(input_data.encode('utf-8'))
 
-
-# ----------------------------- SINAV SİSTEMİ YARDIMCI FONKSİYONLARI -----------------------------
-# Hata Çözümü: encrypt_exam_file, çağrılmadan önce tanımlandı.
+# Hata Çözümü: name 'encrypt_exam_file' is not defined (image_384146.png)
+# Fonksiyonlar, çağrılmadan önce tanımlanmıştır.
 
 def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, total_question_count, progress_bar):
     """Sınav dosyasını şifreler ve meta veriyi hazırlar (AES-GCM)."""
@@ -112,10 +105,12 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, total
         
         progress_bar.progress(30, text="Dosya şifreleniyor...")
         
+        # Dosyayı şifrele
         encrypted_bytes = aesgcm.encrypt(nonce, file_bytes, aad)
         
         progress_bar.progress(70, text="Meta veri hazırlanıyor...")
         
+        # Meta Veri Oluşturma
         access_code_hash = hashlib.sha256(access_code.encode('utf-8')).hexdigest()
         
         meta_data = {
@@ -138,7 +133,7 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, total
     except Exception as e:
         log(f"Sınav Şifreleme Hatası: {e}")
         progress_bar.progress(100, text="Hata oluştu!")
-        # Sınav kitleme sırasında bir hata oluştu (image_6a983a.png) hatasının detayını yakalar.
+        # Sınav kitleme sırasında bir hata oluştu (image_812a43.png / image_6a983a.png) hatasının detayını yakalar.
         st.error("Sınav kitleme sırasında bir hata oluştu. Lütfen dosya formatını ve girdileri kontrol edin.")
         return None, None 
 
@@ -163,7 +158,6 @@ def decrypt_exam_file(encrypted_bytes, access_code, meta, progress_bar):
         aesgcm = AESGCM(key_bytes)
         aad = time_str.encode('utf-8')
         
-        # Çözme işlemi, sadece bütünlüğün ve şifrenin doğruluğunun kanıtlanması içindir.
         decrypted_bytes = aesgcm.decrypt(nonce_bytes, encrypted_bytes, aad)
         
         progress_bar.progress(100, text="Sınav Başarıyla Açıldı!")
@@ -188,7 +182,6 @@ def render_code_module():
     """Zaman ayarlı sınav kilit modülünü render eder."""
     
     st.markdown("## 👨‍🏫 Zaman Ayarlı Sınav Kilit Sistemi")
-    st.markdown("⚠️ Öğrenci, sınav dosyasını indirmek yerine site üzerinde cevaplayacaktır.")
     st.markdown("---")
 
     tab_teacher, tab_student = st.tabs(["Öğretmen (Sınav Hazırlama)", "Öğrenci (Sınavı Çözme)"])
@@ -210,7 +203,6 @@ def render_code_module():
             
             with col_start:
                 st.markdown("##### 🔑 Başlangıç Zamanı (Sınav Giriş)")
-                # Default değerler dinamikleştirildi
                 current_date = datetime.datetime.now(TURKISH_TZ).date()
                 current_time = datetime.datetime.now(TURKISH_TZ).strftime("%H:%M")
 
@@ -220,7 +212,6 @@ def render_code_module():
             with col_end:
                 st.markdown("##### 🛑 Bitiş Zamanı (Sınav Kapanış)")
                 min_date_end = enc_date_start
-                # Bitiş zamanı başlangıçtan 1 saat sonra olarak ayarlandı
                 default_end_dt = datetime.datetime.now(TURKISH_TZ) + datetime.timedelta(hours=1)
                 enc_date_end = st.date_input("Bitiş Tarihi", default_end_dt.date(), key=f"exam_enc_date_end_{st.session_state.reset_counter}", min_value=min_date_end)
                 enc_time_end = st.text_input("Bitiş Saati (SS:DD)", default_end_dt.strftime("%H:%M"), key=f"exam_enc_time_end_{st.session_state.reset_counter}", help="Örnek: 15:30")
@@ -243,8 +234,6 @@ def render_code_module():
             # Önceki sonuçları temizle
             st.session_state.exam_enc_bytes = None
             st.session_state.exam_meta_bytes = None
-            st.session_state.exam_is_enc_downloaded = False
-            st.session_state.exam_is_meta_downloaded = False
             
             try:
                 # Zaman formatı kontrolü
@@ -282,7 +271,6 @@ def render_code_module():
                         st.success(f"Sınav Başarıyla Hazırlandı! Başlangıç: **{start_dt.strftime('%d.%m.%Y %H:%M')}** | Bitiş: **{end_dt.strftime('%d.%m.%Y %H:%M')}** | Soru Sayısı: **{total_questions}**")
                         st.session_state.exam_enc_bytes = enc_bytes
                         st.session_state.exam_meta_bytes = meta_bytes
-                    # Hata mesajı kripto fonksiyonu içinde yakalanıyor.
 
             except Exception as e:
                 log(f"Form Dışı Beklenmedik Hata: {e}")
@@ -298,30 +286,25 @@ def render_code_module():
             
             col_enc, col_meta = st.columns(2)
             
+            # Şifreli dosya için indirme butonu
             with col_enc:
                 st.download_button(
                     label="📝 Şifreli Sınav Dosyasını İndir (.png)",
                     data=st.session_state.exam_enc_bytes,
                     file_name=f"{base_name}_encrypted.png", 
                     mime="image/png", 
-                    on_click=lambda: setattr(st.session_state, 'exam_is_enc_downloaded', True),
-                    disabled=st.session_state.exam_is_enc_downloaded,
                     use_container_width=True
                 )
             
+            # Meta veri için indirme butonu
             with col_meta:
                 st.download_button(
                     label="🔑 Meta Veriyi İndir (.meta)",
                     data=st.session_state.exam_meta_bytes,
                     file_name=f"{base_name}_encrypted.meta",
                     mime="application/json",
-                    on_click=lambda: setattr(st.session_state, 'exam_is_meta_downloaded', True),
-                    disabled=st.session_state.exam_is_meta_downloaded,
                     use_container_width=True
                 )
-            
-            if st.session_state.exam_is_enc_downloaded and st.session_state.exam_is_meta_downloaded:
-                st.success("✅ İki dosya da indirildi.")
 
     # --- ÖĞRENCİ SEKMESİ ---
     with tab_student:
@@ -330,7 +313,7 @@ def render_code_module():
         col_file, col_meta = st.columns(2)
         
         with col_file:
-            # Hata Çözümü: Öğretmen PNG indirdiği için, öğrenci de PNG yüklemelidir. (image_820ee3.png)
+            # files are not allowed (image_820ee3.png) hatası çözümü: Yüklenecek dosya tipi kesinlikle PNG ile kısıtlandı.
             enc_file_student = st.file_uploader("Şifreli Sınav Dosyasını Yükle (.png)", type=["png"], key=f"exam_dec_enc_file_{st.session_state.reset_counter}")
         with col_meta:
             meta_file_student = st.file_uploader("Sınav Meta Verisini Yükle (.meta)", type=["meta", "json", "txt"], key=f"exam_dec_meta_file_{st.session_state.reset_counter}")
@@ -386,7 +369,6 @@ def render_code_module():
         # BUTON: Sınavı Çöz ve Cevap Formunu Aç
         if st.button("🔓 Sınavı Çöz ve Cevap Formunu Aç", type="primary", use_container_width=True):
             st.session_state.exam_is_unlocked = False 
-            st.session_state.exam_decrypted_bytes = None
             
             if not enc_file_student or not meta_file_student:
                 st.error("Lütfen hem şifreli sınav dosyasını (.png) hem de meta veriyi (.meta) yükleyin.")
@@ -413,7 +395,6 @@ def render_code_module():
                     if dec_bytes is not None:
                         # Çözme başarılıysa, dosyayı indirmek yerine cevap formunu aç
                         st.session_state.exam_is_unlocked = True
-                        st.session_state.exam_decrypted_bytes = dec_bytes
                         st.success("Sınav kilidi başarıyla açıldı! Aşağıdaki cevap formunu doldurun.")
                         st.balloons()
         
