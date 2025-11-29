@@ -198,7 +198,11 @@ def add_text_watermark(image_obj, text):
         font = ImageFont.load_default() 
         
     text_color = (255, 0, 0, 100) 
-    text_width, text_height = draw.textbbox((0, 0), text, font=font)[2], draw.textbbox((0, 0), text, font=font)[3]
+    # Streamlit'in varsayılan fontunu kullandığımız için textbbox'ın 4 değer döndürdüğünü varsayıyorum.
+    # Alternatif olarak (0, 0, draw.textsize(text, font=font)[0], draw.textsize(text, font=font)[1]) kullanılabilir.
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width, text_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    
     x = (width - text_width) / 2
     y = (height - text_height) / 2
     
@@ -348,7 +352,7 @@ def render_cipher_module():
             enc_no_pass = st.checkbox("Şifre kullanma (Sadece zaman kilidi)", key="enc_no_pass", value=(not enc_pass))
             
             if enc_no_pass:
-                 enc_pass = "" 
+                enc_pass = "" 
             
             st.markdown("---")
             
@@ -459,41 +463,42 @@ def render_cipher_module():
                         meta = json.loads(meta_file.getvalue().decode('utf-8'))
                         
                         if meta.get("type") != "IMAGE_LOCK":
-                             st.error("Yüklenen meta dosyası bir Görsel Kilidi dosyası değil.")
-                             meta_file = None
-                             st.stop()
-                             
-                        meta_data_available = True
-                        open_time_str = meta.get("open_time", "Bilinmiyor")
-                        ot_dt = parse_normalized_time(open_time_str)
-                        
-                        now_tr = datetime.datetime.now(TURKISH_TZ).replace(second=0, microsecond=0)
-                        
-                        is_open = now_tr >= ot_dt
-                        color = "green" if is_open else "red"
-
-                        if not is_open:
-                            time_left = ot_dt - now_tr
-                            days = time_left.days
-                            total_seconds = int(time_left.total_seconds())
-                            hours = total_seconds // 3600
-                            minutes = (total_seconds % 3600) // 60
+                            st.error("Yüklenen meta dosyası bir Görsel Kilidi dosyası değil.")
+                            meta_file = None
+                            # st.stop() # st.stop() kullanmak, Streamlit'in beklenmedik yeniden çalışmasına neden olabilir, sadece mesaj vermek yeterli.
                             
-                            parts = []
-                            if days > 0: parts.append(f"**{days} gün**")
-                            if hours > 0: parts.append(f"**{hours} saat**")
-                            if minutes > 0 or not parts: parts.append(f"**{minutes} dakika**")
-                            time_left_str = "Kalan Süre: " + ", ".join(parts)
                         else:
-                            time_left_str = "Açılma zamanı geldi/geçti."
+                            meta_data_available = True
+                            open_time_str = meta.get("open_time", "Bilinmiyor")
+                            ot_dt = parse_normalized_time(open_time_str)
+                            
+                            now_tr = datetime.datetime.now(TURKISH_TZ).replace(second=0, microsecond=0)
+                            
+                            is_open = now_tr >= ot_dt
+                            color = "green" if is_open else "red"
 
-                        st.markdown(
-                            f"Açılma Zamanı (TR): **<span style='color:{color}; font-weight: bold;'>{ot_dt.strftime('%Y-%m-%d %H:%M')}</span>**", 
-                            unsafe_allow_html=True
-                        )
-                        st.markdown(f"**Durum:** **<span style='color:{color};'>{'🔓 AÇILABİLİR' if is_open else '🔒 KİLİTLİ'}</span>**", unsafe_allow_html=True)
-                        st.markdown(f"*{time_left_str}*")
-                        
+                            if not is_open:
+                                time_left = ot_dt - now_tr
+                                days = time_left.days
+                                total_seconds = int(time_left.total_seconds())
+                                hours = total_seconds // 3600
+                                minutes = (total_seconds % 3600) // 60
+                                
+                                parts = []
+                                if days > 0: parts.append(f"**{days} gün**")
+                                if hours > 0: parts.append(f"**{hours} saat**")
+                                if minutes > 0 or not parts: parts.append(f"**{minutes} dakika**")
+                                time_left_str = "Kalan Süre: " + ", ".join(parts)
+                            else:
+                                time_left_str = "Açılma zamanı geldi/geçti."
+
+                            st.markdown(
+                                f"Açılma Zamanı (TR): **<span style='color:{color}; font-weight: bold;'>{ot_dt.strftime('%Y-%m-%d %H:%M')}</span>**", 
+                                unsafe_allow_html=True
+                            )
+                            st.markdown(f"**Durum:** **<span style='color:{color};'>{'🔓 AÇILABİLİR' if is_open else '🔒 KİLİTLİ'}</span>**", unsafe_allow_html=True)
+                            st.markdown(f"*{time_left_str}*")
+                            
                     except Exception as e:
                         st.error(f"Meta dosya okuma/zaman hatası: {e}")
                 else:
@@ -502,23 +507,29 @@ def render_cipher_module():
 
             st.markdown("---")
             st.markdown("##### 2. Şifreyi Gir ve Çöz")
-            dec_pass = st.text_input("Görsel Şifresi (gerekliyse)", type="password", key="decrypt_pass", value=st.session_state.decrypt_pass)
+            dec_pass = st.text_input("Görsel Şifresi (gerekliyse)", type="password", key="decrypt_pass_input", value=st.session_state.decrypt_pass)
             
+            # Sifre giris alanindaki degeri session state'e manuel atama
+            # Streamlit'in kendi key mekanizmasi kullanildigi icin aslinda bu satira gerek yok, ancak tutarlilik icin eklenebilir.
+            # st.session_state.decrypt_pass = dec_pass 
+
             col_dec_btn, col_res_btn = st.columns([2, 1])
 
             with col_dec_btn:
                 if st.button("🔓 Çöz", type="primary", use_container_width=True): 
+                    # Session state'i temizle
                     for k in ['decrypted_image', 'watermarked_image', 'is_message_visible', 'prompt_secret_key']:
                         st.session_state[k] = None
                     st.session_state.hidden_message = ""
                     st.session_state.secret_key_hash = ""
+                    st.session_state.decrypt_pass = st.session_state.decrypt_pass_input # Güncel şifreyi al
                     
                     log("--- Yeni Çözme İşlemi Başlatıldı ---")
                     
                     if not enc_file or not meta_file:
                         st.error("Lütfen hem şifreli .png hem de .meta dosyasını yükleyin.")
                     elif not meta_data_available:
-                            st.error("Yüklenen meta dosyası geçerli bir JSON formatında değil.")
+                        st.error("Yüklenen meta dosyası geçerli bir JSON formatında veya doğru tipte değil.")
                     else:
                         try:
                             allow_no = bool(meta.get("allow_no_password", False))
@@ -527,7 +538,7 @@ def render_cipher_module():
                             
                             if ot_dt is None:
                                 st.error("Zaman bilgisi okunamadı. Meta dosyasını kontrol edin.")
-                                st.stop()
+                                # st.stop()
                                 
                             now_tr = datetime.datetime.now(TURKISH_TZ)
                             now_check = now_tr.replace(second=0, microsecond=0)
@@ -536,7 +547,7 @@ def render_cipher_module():
                                 log("Hata: Henüz zamanı gelmedi.")
                                 st.warning(f"Bu dosyanın açılmasına daha var. Açılma Zamanı: **{ot_dt.strftime('%Y-%m-%d %H:%M')}**")
                             else:
-                                current_dec_pass = st.session_state.decrypt_pass 
+                                current_dec_pass = st.session_state.decrypt_pass
                                 pw_to_use = "" if allow_no else current_dec_pass
                                 
                                 if not allow_no and not current_dec_pass:
@@ -581,13 +592,19 @@ def render_cipher_module():
                 st.image(image_to_show, caption=caption, use_container_width=True)
                 
                 img_byte_arr = io.BytesIO()
-                image_to_show.save(img_byte_arr, format='PNG')
-                st.download_button(
-                    label="Görüntülenen Resmi İndir",
-                    data=img_byte_arr.getvalue(),
-                    file_name="decrypted_image.png",
-                    mime="image/png"
-                )
+                # Görüntülenen resmi PNG olarak kaydet
+                try:
+                    image_to_show.save(img_byte_arr, format='PNG')
+                except Exception as e:
+                    st.warning(f"Resmi kaydetme hatası: {e}. İndirme butonu devre dışı.")
+                
+                if img_byte_arr.getvalue():
+                    st.download_button(
+                        label="Görüntülenen Resmi İndir",
+                        data=img_byte_arr.getvalue(),
+                        file_name="decrypted_image.png",
+                        mime="image/png"
+                    )
             else:
                 st.info(caption)
             
@@ -596,7 +613,6 @@ def render_cipher_module():
             # --- Gizli Mesaj Gösterme Mantığı ---
             
             if st.session_state.decrypted_image is not None and st.session_state.hidden_message:
-                
                 if st.session_state.is_message_visible:
                     if st.button("Gizli Mesajı Gizle", use_container_width=True): 
                         log("Gizli mesaj gizlendi.")
@@ -615,9 +631,10 @@ def render_cipher_module():
                             value=st.session_state.modal_pass,
                             placeholder="Gizli mesajı görmek için şifreyi girin"
                         )
+                        st.session_state.modal_pass = modal_pass # Input değerini state'e kaydet
                         
                         if st.button("Filigranı Göster", key="show_watermark_btn", use_container_width=True):
-                            entered_hash = hashlib.sha256(modal_pass.encode('utf-8')).hexdigest()
+                            entered_hash = hashlib.sha256(st.session_state.modal_pass.encode('utf-8')).hexdigest()
                             
                             if entered_hash == st.session_state.secret_key_hash:
                                 log("Filigran şifresi doğru. Filigran oluşturuluyor.")
@@ -670,11 +687,15 @@ def render_code_module():
                 st.markdown("##### 🛑 Bitiş Zamanı (Sınav Kapanış)")
                 min_date_end = enc_date_start
                 enc_date_end = st.date_input("Bitiş Tarihi", enc_date_start, key="exam_enc_date_end", min_value=min_date_end)
-                enc_time_end = st.text_input("Bitiş Saati (SS:DD)", (datetime.datetime.now(TURKISH_TZ) + datetime.timedelta(hours=1)).strftime("%H:%M"), key="exam_enc_time_end", help="Örnek: 15:30")
+                # Bitiş saati, başlangıç saatinden 1 saat sonra varsayılabilir
+                default_end_time = (datetime.datetime.now(TURKISH_TZ) + datetime.timedelta(hours=1)).strftime("%H:%M")
+                enc_time_end = st.text_input("Bitiş Saati (SS:DD)", default_end_time, key="exam_enc_time_end", help="Örnek: 15:30")
 
             enc_access_code = st.text_input("Öğrenci Erişim Kodu (Şifre)", value="", key="exam_enc_access_code", type="password", help="Öğrencilerin sınavı indirebilmek için gireceği kod.")
-            enc_teacher_email = st.text_input("Öğretmen E-posta Adresi (Cevapların Gönderileceği)", key="exam_enc_email", help="Bu bilgi meta veriye eklenir.")
-            enc_total_questions = st.number_input("Toplam Soru Sayısı", min_value=1, value=10, key="exam_enc_total_questions", help="Bu bilgi meta veriye eklenir.")
+            
+            # Bu iki alan meta veriye ekleniyor ancak kriptografik işlemde kullanılmıyor.
+            # enc_teacher_email = st.text_input("Öğretmen E-posta Adresi (Cevapların Gönderileceği)", key="exam_enc_email", help="Bu bilgi meta veriye eklenir.")
+            # enc_total_questions = st.number_input("Toplam Soru Sayısı", min_value=1, value=10, key="exam_enc_total_questions", help="Bu bilgi meta veriye eklenir.")
             
             submitted = st.form_submit_button("🔒 Sınavı Kilitle ve Hazırla", type="primary", use_container_width=True)
 
@@ -739,7 +760,7 @@ def render_code_module():
                 st.download_button(
                     label="📝 Şifreli Sınavı İndir",
                     data=st.session_state.exam_enc_bytes,
-                    file_name=f"{base_name}_encrypted",
+                    file_name=f"{base_name}_encrypted", # Uzantısız bırakıldı. Öğrencinin bunu kendi dosyası olarak kaydetmesi önerilir.
                     mime="application/octet-stream",
                     on_click=lambda: setattr(st.session_state, 'exam_is_enc_downloaded', True),
                     disabled=st.session_state.exam_is_enc_downloaded,
@@ -758,7 +779,7 @@ def render_code_module():
                 )
             
             if st.session_state.exam_is_enc_downloaded and st.session_state.exam_is_meta_downloaded:
-                   st.success("✅ İki dosya da indirildi.")
+                st.success("✅ İki dosya da indirildi.")
 
     # --- ÖĞRENCİ SEKMESİ ---
     with tab_student:
@@ -788,32 +809,33 @@ def render_code_module():
                     if meta.get("type") != "EXAM_LOCK":
                         st.error("Yüklenen meta dosyası bir Sınav Kilidi dosyası değil.")
                         meta_file_student = None
-                        st.stop()
-                    
-                    meta_data_available = True
-                    start_time_str = meta.get("start_time")
-                    end_time_str = meta.get("end_time")
-                    
-                    start_dt = parse_normalized_time(start_time_str)
-                    end_dt = parse_normalized_time(end_time_str)
-                    now_tr = datetime.datetime.now(TURKISH_TZ).replace(second=0, microsecond=0)
-                    
-                    is_too_early = now_tr < start_dt
-                    is_too_late = now_tr > end_dt
-                    is_active = start_dt <= now_tr <= end_dt
-                    
-                    st.info(f"Başlangıç: **{start_dt.strftime('%d.%m.%Y %H:%M')}** | Bitiş: **{end_dt.strftime('%d.%m.%Y %H:%M')}**")
-                    
-                    if is_too_early:
-                        time_left = start_dt - now_tr
-                        st.warning(f"🔓 Sınav Henüz Başlamadı! Kalan süre: **{time_left.days} gün {time_left.seconds//3600} saat {(time_left.seconds%3600)//60} dakika**")
-                    elif is_too_late:
-                        st.error("🛑 Sınav Sona Erdi! Dosyayı çözemezsiniz.")
-                    elif is_active:
-                        time_left = end_dt - now_tr
-                        st.success(f"✅ Sınav Aktif! Kalan süre: **{time_left.days} gün {time_left.seconds//3600} saat {(time_left.seconds%3600)//60} dakika**")
-                    
-                    
+                        # st.stop()
+                        
+                    else:
+                        meta_data_available = True
+                        start_time_str = meta.get("start_time")
+                        end_time_str = meta.get("end_time")
+                        
+                        start_dt = parse_normalized_time(start_time_str)
+                        end_dt = parse_normalized_time(end_time_str)
+                        now_tr = datetime.datetime.now(TURKISH_TZ).replace(second=0, microsecond=0)
+                        
+                        is_too_early = now_tr < start_dt
+                        is_too_late = now_tr > end_dt
+                        is_active = start_dt <= now_tr <= end_dt
+                        
+                        st.info(f"Başlangıç: **{start_dt.strftime('%d.%m.%Y %H:%M')}** | Bitiş: **{end_dt.strftime('%d.%m.%Y %H:%M')}**")
+                        
+                        if is_too_early:
+                            time_left = start_dt - now_tr
+                            st.warning(f"🔓 Sınav Henüz Başlamadı! Kalan süre: **{time_left.days} gün {time_left.seconds//3600} saat {(time_left.seconds%3600)//60} dakika**")
+                        elif is_too_late:
+                            st.error("🛑 Sınav Sona Erdi! Dosyayı çözemezsiniz.")
+                        elif is_active:
+                            time_left = end_dt - now_tr
+                            st.success(f"✅ Sınav Aktif! Kalan süre: **{time_left.days} gün {time_left.seconds//3600} saat {(time_left.seconds%3600)//60} dakika**")
+                        
+                        
                 except Exception as e:
                     st.error(f"Meta dosya okuma hatası veya geçersiz format: {e}")
 
@@ -853,7 +875,7 @@ def render_code_module():
             st.markdown("---")
             st.subheader("2. Çözülmüş Dosyayı İndir")
             
-            original_file_name = enc_file_student.name if enc_file_student else "sinav"
+            original_file_name = enc_file_student.name if enc_file_student else "sinav_dosyasi"
             file_extension = os.path.splitext(original_file_name)[1] or ".dat"
             
             st.download_button(
@@ -867,32 +889,43 @@ def render_code_module():
             st.success("Sınav dosyasını indirdikten sonra, cevaplarınızı öğretmeninizle paylaşmayı unutmayın!")
             
             
-# app.py'nin en üst kısımları
-# ... Diğer import'lar ...
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-# ... Diğer kriptografi import'ları ...
-
-# --- YARDIMCI FONKSİYONLAR ---
-def log(message):
-    # ...
-
-# --- KRİPTOGRAFİ VE İŞLEM FONKSİYONLARI ---
-def derive_key(input_data, salt_bytes):
-    # ...
-    
-def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, progress_bar): # BU FONKSİYON BURADA OLMALIDIR
-    # ...
-
-# --- ANA UYGULAMA YAPISI ---
-def render_cipher_module():
-    # ...
-    
-def render_code_module(): # BU FONKSİYON, encrypt_exam_file'ı çağırmadan önce tanımlanmalıdır.
-    # ...
-
 # --- ANA AKIŞ ---
+
 init_session_state()
-if st.session_state.current_view == 'code':
+
+st.set_page_config(page_title="Zaman Ayarlı Kripto Uygulaması", layout="wide", initial_sidebar_state="expanded")
+st.title("⏱️ Zaman Ayarlı Kripto Uygulaması")
+st.caption("AES-GCM ve Streamlit ile zaman kilitli şifreleme modülleri.")
+
+# Kenar çubuğu (Sidebar)
+with st.sidebar:
+    # Türkiye saat dilimi görseli (Bu, uygulamanın amacını vurgulamak için eklenmiştir)
+    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/Istanbul_Time_Zone.svg/1200px-Istanbul_Time_Zone.svg.png", width=100)
+    st.markdown("## ⚙️ Uygulama Ayarları")
+    
+    view_option = st.radio(
+        "Modül Seçimi",
+        ('🖼️ Görsel Kilit (Time Lock)', '👨‍🏫 Sınav Kilit (Exam Lock)'),
+        key="app_mode_radio"
+    )
+    
+    if view_option == '🖼️ Görsel Kilit (Time Lock)':
+        st.session_state.current_view = 'cipher'
+    else:
+        st.session_state.current_view = 'code'
+        
+    st.markdown("---")
+    
+    st.button("Tüm Verileri Temizle", on_click=reset_all_inputs, use_container_width=True, help="Tüm girdileri ve sonuçları siler.")
+    
+    st.markdown("---")
+    st.markdown("##### 🇹🇷 Türk Saat Dilimi (UTC+03)")
+    now_tr = datetime.datetime.now(TURKISH_TZ).strftime("%d.%m.%Y %H:%M:%S")
+    st.write(f"Şu anki zaman: **{now_tr}**")
+
+
+# Ana İçerik
+if st.session_state.current_view == 'cipher':
+    render_cipher_module()
+elif st.session_state.current_view == 'code':
     render_code_module()
-
-
