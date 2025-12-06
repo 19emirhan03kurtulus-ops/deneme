@@ -5,7 +5,8 @@ import json
 import os
 import hashlib
 import io
-import base64 # Basit dosya gösterimi için eklendi
+import base64
+import time # Kapatma mekanizması için eklendi
 
 # Gerekli Kriptografi Kütüphanesi
 try:
@@ -55,6 +56,10 @@ def init_session_state():
     if 'exam_is_meta_downloaded' not in st.session_state: st.session_state.exam_is_meta_downloaded = False
     if 'exam_decrypted_bytes' not in st.session_state: st.session_state.exam_decrypted_bytes = None
     if 'original_file_extension' not in st.session_state: st.session_state.original_file_extension = ""
+    # Yeni eklendi: Cevapları tutmak için
+    if 'student_answers' not in st.session_state: st.session_state.student_answers = {}
+    # Yeni eklendi: Sınavın bittiği zamanı tutmak için (kapanış trigger'ı)
+    if 'exam_ended_tr' not in st.session_state: st.session_state.exam_ended_tr = None
 
 
 def reset_all_inputs():
@@ -67,6 +72,8 @@ def reset_all_inputs():
     st.session_state.exam_is_meta_downloaded = False
     st.session_state.exam_decrypted_bytes = None
     st.session_state.original_file_extension = ""
+    st.session_state.student_answers = {}
+    st.session_state.exam_ended_tr = None
     
 # --- KRİPTOGRAFİ VE İŞLEM FONKSİYONLARI ---
 
@@ -107,12 +114,12 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, quest
         
         progress_bar.progress(70, text="Meta veri hazırlanıyor...")
         
-        # 3. Meta Veri Oluşturma (question_count ve file_extension eklendi)
+        # 3. Meta Veri Oluşturma 
         access_code_hash = hashlib.sha256(access_code.encode('utf-8')).hexdigest()
         
         meta_data = {
             "type": "EXAM_LOCK",
-            "version": "1.3", # Versiyon güncellendi
+            "version": "1.4", # Versiyon güncellendi
             "start_time": normalize_time(start_time_dt),
             "end_time": normalize_time(end_time_dt),
             "access_code_hash": access_code_hash,
@@ -120,7 +127,7 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, quest
             "salt_hex": salt.hex(),
             "file_size": len(file_bytes),
             "question_count": question_count,
-            "original_extension": file_extension # Orijinal uzantı eklendi
+            "original_extension": file_extension 
         }
         
         meta_bytes = json.dumps(meta_data, indent=4).encode('utf-8')
@@ -173,45 +180,82 @@ def decrypt_exam_file(encrypted_bytes, access_code, meta, progress_bar):
 
 # ------------------------------------------------------------------------------------------------
 
-def render_decrypted_content(dec_bytes, file_extension):
-    """Çözülmüş içeriği ekranda indirme yapmadan göstermeye çalışır."""
-    st.markdown("---")
-    st.subheader("2. Çözülmüş Sınav İçeriği (Yalnızca Görüntüleme)")
+def render_decrypted_content(dec_bytes, file_extension, question_count):
+    """Çözülmüş içeriği ekranda indirme yapmadan göstermeye ve cevap alanını eklemeye çalışır."""
     
-    if file_extension in [".txt"]:
-        try:
-            content = dec_bytes.decode('utf-8')
-            st.text_area("Sınav Metni", content, height=500, disabled=True)
-            st.success("Metin dosyası başarıyla görüntülendi.")
-        except Exception:
-            st.error("Metin içeriği görüntülenirken bir hata oluştu.")
-            
-    elif file_extension in [".png", ".jpg", ".jpeg"]:
-        try:
-            image_stream = io.BytesIO(dec_bytes)
-            st.image(image_stream, caption="Çözülmüş Görüntü Dosyası", use_container_width=True)
-            st.success("Görüntü dosyası başarıyla görüntülendi.")
-        except Exception:
-            st.error("Görüntü dosyası görüntülenirken bir hata oluştu.")
-            
-    elif file_extension in [".pdf"]:
-        # PDF'yi indirme yapmadan göstermek için embed/iframe kullanmak gerekir
-        # Streamlit'te bu, indirilebilir bir nesne oluşturmadan zordur ve tarayıcıya güvenmek gerekir.
-        # Basit bir iframe denemesi (Garantili Çalışmaz ve tarayıcı kaydetmeyi engellemez):
-        try:
-            base64_pdf = base64.b64encode(dec_bytes).decode('utf-8')
-            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="700" type="application/pdf"></iframe>'
-            st.markdown(pdf_display, unsafe_allow_html=True)
-            st.warning("PDF gösterimi tarayıcı ayarlarınıza bağlıdır ve indirmeyi tamamen engellemez.")
-        except Exception:
-            st.error("PDF gösterilirken bir hata oluştu.")
+    # 1. SINAV KAĞIDI GÖRÜNTÜLEME
+    with st.container(border=True):
+        st.subheader("📝 Sınav Kağıdı (Yalnızca Görüntüleme)")
         
-    else:
-        st.warning(f"**{file_extension}** uzantılı dosya tipi doğrudan tarayıcıda görüntülenemiyor. Sınavı tamamlamak için kağıt/ekran üzerinde çözmelisiniz.")
-        st.info("Bu sistemde, indirme butonu sınav kağıdının dağıtılmaması için kasıtlı olarak kaldırılmıştır.")
-    
+        if file_extension in [".txt"]:
+            try:
+                content = dec_bytes.decode('utf-8')
+                st.text_area("Sınav Metni", content, height=500, disabled=True)
+                st.success("Metin dosyası başarıyla görüntülendi.")
+            except Exception:
+                st.error("Metin içeriği görüntülenirken bir hata oluştu.")
+                
+        elif file_extension in [".png", ".jpg", ".jpeg"]:
+            try:
+                image_stream = io.BytesIO(dec_bytes)
+                st.image(image_stream, caption="Çözülmüş Görüntü Dosyası", use_container_width=True)
+                st.success("Görüntü dosyası başarıyla görüntülendi.")
+            except Exception:
+                st.error("Görüntü dosyası görüntülenirken bir hata oluştu.")
+                
+        elif file_extension in [".pdf"]:
+            # PDF'yi indirme yapmadan göstermek için iframe denemesi
+            try:
+                base64_pdf = base64.b64encode(dec_bytes).decode('utf-8')
+                pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="700" type="application/pdf"></iframe>'
+                st.markdown(pdf_display, unsafe_allow_html=True)
+                st.warning("PDF gösterimi tarayıcı ayarlarınıza bağlıdır ve indirmeyi tamamen engellemez.")
+            except Exception:
+                st.error("PDF gösterilirken bir hata oluştu.")
+            
+        else:
+            st.warning(f"**{file_extension.upper()}** uzantılı dosya tipi doğrudan tarayıcıda görüntülenemiyor.")
+            st.info("Lütfen sınav sorularını başka bir yöntemle görüntüleyin. Cevaplarınızı aşağıya girebilirsiniz.")
+
     st.markdown("---")
-    st.markdown("Sınavınız burada görüntülenmektedir. Lütfen cevaplarınızı ayrı bir kağıda yazın.")
+    
+    # 2. CEVAPLAMA ALANI OLUŞTURMA
+    st.subheader("✍️ Cevap Giriş Alanı")
+    st.caption(f"Lütfen **{question_count}** soruluk sınavın cevaplarını aşağıdaki kutulara girin.")
+    
+    with st.form("answer_submission_form", clear_on_submit=False):
+        for i in range(1, question_count + 1):
+            # Cevapları session state'te tutuyoruz
+            key = f"answer_{i}"
+            st.session_state.student_answers.setdefault(key, "") 
+            
+            # Text area'nın değeri session state'ten alınıyor ve on_change ile güncelleniyor
+            st.session_state.student_answers[key] = st.text_area(
+                f"**Soru {i} Cevabı:**", 
+                value=st.session_state.student_answers.get(key, ""),
+                key=key, 
+                height=100
+            )
+
+        submit_button = st.form_submit_button("Cevapları Kaydet/Gönder", type="primary", use_container_width=True)
+        
+        if submit_button:
+            # Cevapların JSON olarak öğretmen ile paylaşılmaya hazır olduğunu varsayalım.
+            final_answers_json = json.dumps(st.session_state.student_answers, ensure_ascii=False, indent=4)
+            
+            st.success("Cevaplar başarıyla kaydedildi!")
+            
+            # Öğrencinin cevapları indirmesine izin veren (veya kopyalamasını sağlayan) bir alan.
+            # Öğrenci cevaplarını öğretmene nasıl ileteceği konusunda talimat verilmelidir.
+            
+            st.download_button(
+                label="Cevap Dosyasını İndir (.json)",
+                data=final_answers_json.encode('utf-8'),
+                file_name="sinav_cevaplari.json",
+                mime="application/json",
+                help="Bu dosyayı indirip öğretmeninizle paylaşın."
+            )
+            st.info("Lütfen cevap dosyanızı indirip öğretmeninizle paylaşmayı unutmayın.")
 
 
 def render_code_module():
@@ -262,10 +306,13 @@ def render_code_module():
             submitted = st.form_submit_button("🔒 Sınavı Kilitle ve Hazırla", type="primary", use_container_width=True)
 
         if submitted:
+            # Önceki state'leri temizle
             st.session_state.exam_is_enc_downloaded = False
             st.session_state.exam_is_meta_downloaded = False
             st.session_state.exam_decrypted_bytes = None
             st.session_state.original_file_extension = ""
+            st.session_state.student_answers = {}
+            st.session_state.exam_ended_tr = None
             
             try:
                 time_format_valid = True
@@ -348,6 +395,14 @@ def render_code_module():
 
     # --- ÖĞRENCİ SEKMESİ ---
     with tab_student:
+        
+        # Sınav bitmişse, tüm akışı durdur
+        if st.session_state.exam_ended_tr:
+            st.error(f"🛑 SINAV SÜRESİ DOLDU! 🛑")
+            st.warning(f"Sınav **{st.session_state.exam_ended_tr}** itibarıyla sona ermiştir. Görüntüleme ve cevaplama ekranı kapatılmıştır. Lütfen cevap dosyanızı (indirdiyseniz) öğretmeninize iletin.")
+            return # Fonksiyonu burada sonlandır
+            
+        
         st.subheader("1. Sınav Dosyalarını Yükle")
         
         col_file, col_meta = st.columns(2)
@@ -367,6 +422,7 @@ def render_code_module():
         is_active = False
         question_count_student = 0
         original_extension = ""
+        end_dt = None
         
         if meta_file_student:
             with st.container(border=True):
@@ -382,10 +438,10 @@ def render_code_module():
                         start_time_str = meta.get("start_time")
                         end_time_str = meta.get("end_time")
                         question_count_student = meta.get("question_count", "Bilinmiyor") 
-                        original_extension = meta.get("original_extension", "") # Uzantı alındı
+                        original_extension = meta.get("original_extension", "") 
                         
                         start_dt = parse_normalized_time(start_time_str)
-                        end_dt = parse_normalized_time(end_time_str)
+                        end_dt = parse_normalized_time(end_time_str) # Global olarak kullanmak için
                         now_tr = datetime.datetime.now(TURKISH_TZ).replace(second=0, microsecond=0)
                         
                         is_too_early = now_tr < start_dt
@@ -404,6 +460,10 @@ def render_code_module():
                             time_left = start_dt - now_tr
                             st.warning(f"🔓 Sınav Henüz Başlamadı! Kalan süre: **{time_left.days} gün {time_left.seconds//3600} saat {(time_left.seconds%3600)//60} dakika**")
                         elif is_too_late:
+                            # Sınav bittiyse ve henüz session state'e kaydedilmediyse kaydet ve uygulamayı yeniden çalıştır
+                            if st.session_state.exam_ended_tr is None:
+                                st.session_state.exam_ended_tr = end_dt.strftime('%d.%m.%Y %H:%M')
+                                st.rerun() 
                             st.error("🛑 Sınav Sona Erdi! Dosyayı çözemezsiniz.")
                         elif is_active:
                             time_left = end_dt - now_tr
@@ -417,6 +477,7 @@ def render_code_module():
         if st.button("🔓 Sınavı Görüntüle ve Başla", type="primary", use_container_width=True):
             st.session_state.exam_decrypted_bytes = None
             st.session_state.original_file_extension = original_extension
+            st.session_state.student_answers = {} # Cevapları sıfırla
             
             if not enc_file_student or not meta_file_student:
                 st.error("Lütfen hem şifreli sınav dosyasını hem de meta veriyi yükleyin.")
@@ -442,13 +503,42 @@ def render_code_module():
                     if dec_bytes:
                         st.success("Sınav Dosyası Başarıyla Çözüldü!")
                         st.session_state.exam_decrypted_bytes = dec_bytes
-                        st.session_state.original_file_extension = original_extension # Uzantıyı session state'e kaydet
+                        st.session_state.original_file_extension = original_extension 
+                        # Soru sayısını int'e çevir ve cevap kutularını başlat
+                        try:
+                            q_count = int(question_count_student)
+                        except:
+                            q_count = 10 # Hata durumunda varsayılan
+                            
+                        # Cevaplar için boş dict oluştur
+                        st.session_state.student_answers = {f"answer_{i}": "" for i in range(1, q_count + 1)}
+                        st.rerun() # Görüntüleme alanını hemen göstermek için yeniden çalıştır
                     else:
                         st.error("Çözme hatası. Lütfen dosyaları ve erişim kodunu kontrol edin.")
         
-        # --- GÖRÜNTÜLEME BÖLÜMÜ (Öğrenci) ---
+        
+        # --- GÖRÜNTÜLEME VE CEVAPLAMA BÖLÜMÜ (Öğrenci) ---
         if st.session_state.exam_decrypted_bytes:
-             render_decrypted_content(st.session_state.exam_decrypted_bytes, st.session_state.original_file_extension)
+            # Sınavın bitip bitmediğini kontrol et (anlık kontrol)
+            now_tr = datetime.datetime.now(TURKISH_TZ).replace(second=0, microsecond=0)
+            if end_dt and now_tr > end_dt:
+                # Sınav bitti. Kapanış trigger'ını ayarla ve yeniden çalıştır
+                if st.session_state.exam_ended_tr is None:
+                    st.session_state.exam_ended_tr = end_dt.strftime('%d.%m.%Y %H:%M')
+                    st.rerun() 
+            
+            # Eğer hala aktifse render et
+            if st.session_state.exam_ended_tr is None:
+                try:
+                    q_count = int(question_count_student)
+                except:
+                    q_count = 10
+                    
+                render_decrypted_content(
+                    st.session_state.exam_decrypted_bytes, 
+                    st.session_state.original_file_extension,
+                    q_count
+                )
             
             
 # --- ANA AKIŞ ---
@@ -472,7 +562,6 @@ with st.sidebar:
     st.markdown("##### 🇹🇷 Türk Saat Dilimi (UTC+03)")
     now_tr = datetime.datetime.now(TURKISH_TZ).strftime("%d.%m.%Y %H:%M:%S")
     st.write(f"Şu anki zaman: **{now_tr}**")
-
 
 # Ana İçerik
 render_code_module()
