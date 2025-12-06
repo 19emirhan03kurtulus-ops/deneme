@@ -81,43 +81,16 @@ def reset_all_inputs():
     """Tüm girdileri ve sonuçları temizler."""
     log("Tüm girdi ve sonuçlar temizlendi (reset_all_inputs).")
     
-    # Kripto/Dosya Verileri
     st.session_state.exam_enc_bytes = None
     st.session_state.exam_meta_bytes = None
     st.session_state.exam_is_enc_downloaded = False
     st.session_state.exam_is_meta_downloaded = False
     st.session_state.exam_decrypted_bytes = None
     st.session_state.original_file_extension = ""
-    
-    # Sınav Süresi ve Cevap Verileri (Yeni Gezinme Yapısına Göre)
     st.session_state.current_question_index = 1
     st.session_state.student_answers = {}
     st.session_state.exam_ended_tr = None
     st.session_state.answers_sent = False
-    
-    # Öğretmen Sekmesi Girdileri (Form içindeki ve dışındaki tüm girdiler)
-    # Bu anahtarlar, formun 'submitted' durumunun dışındaki kontroller için gereklidir.
-    # datetime objesini buraya koymak, Streamlit'in date/time/number inputlarının varsayılan değerini sıfırlamasını sağlar.
-    current_date = datetime.datetime.now(TURKISH_TZ).date()
-    current_time_str = datetime.datetime.now(TURKISH_TZ).strftime("%H:%M")
-    
-    if 'exam_enc_file_upload' in st.session_state: del st.session_state.exam_enc_file_upload
-    if 'exam_enc_date_start' in st.session_state: st.session_state.exam_enc_date_start = current_date
-    if 'exam_enc_time_start' in st.session_state: st.session_state.exam_enc_time_start = current_time_str
-    if 'exam_enc_date_end' in st.session_state: st.session_state.exam_enc_date_end = current_date
-    if 'exam_enc_time_end' in st.session_state: st.session_state.exam_enc_time_end = current_time_str
-    if 'exam_enc_access_code' in st.session_state: st.session_state.exam_enc_access_code = ""
-    if 'exam_enc_question_count' in st.session_state: st.session_state.exam_enc_question_count = 10
-    if 'exam_enc_teacher_email' in st.session_state: st.session_state.exam_enc_teacher_email = "19enes03.kurtulus@gmail.com"
-    
-    # Öğrenci Sekmesi Girdileri
-    if 'exam_dec_enc_file' in st.session_state: del st.session_state.exam_dec_enc_file
-    if 'exam_dec_meta_file' in st.session_state: del st.session_state.exam_dec_meta_file
-    if 'exam_dec_access_code' in st.session_state: st.session_state.exam_dec_access_code = ""
-    if 'student_id_input' in st.session_state: st.session_state.student_id_input = ""
-    
-    # Tüm session state temizlendi, arayüzün yenilenmesi için
-    st.experimental_rerun()
     
 
 def derive_key(input_data, salt_bytes):
@@ -269,7 +242,7 @@ def send_email_to_teacher(teacher_email, student_info, answers_dict):
 def render_decrypted_content(dec_bytes, file_extension, question_count, teacher_email):
     """Çözülmüş içeriği ekranda indirme yapmadan göstermeye ve Soru bazlı cevap alanını eklemeye çalışır."""
     
-    # 1. SINAV KAĞIDI GÖRÜNTÜLEME
+    # 1. SINAV KAĞIDI GÖRÜNTÜLEME (Aynı Kaldı)
     with st.container(border=True):
         st.subheader("📝 Sınav Kağıdı (Yalnızca Görüntüleme)")
         
@@ -392,12 +365,6 @@ def render_code_module():
     with tab_teacher:
         st.subheader("1. Sınav Dosyasını Yükle ve Kitle")
         
-        # Öğretmen sekmesindeki varsayılan değerleri tanımla
-        default_date = st.session_state.get('exam_enc_date_start', datetime.datetime.now(TURKISH_TZ).date())
-        default_time = st.session_state.get('exam_enc_time_start', datetime.datetime.now(TURKISH_TZ).strftime("%H:%M"))
-        default_q_count = st.session_state.get('exam_enc_question_count', 10)
-        default_email = st.session_state.get('exam_enc_teacher_email', "19enes03.kurtulus@gmail.com")
-        
         with st.form("exam_encrypt_form", clear_on_submit=False):
             
             uploaded_file = st.file_uploader(
@@ -408,37 +375,38 @@ def render_code_module():
             
             col_start, col_end = st.columns(2)
             
+            # Başlangıç Saati
+            current_time = datetime.datetime.now(TURKISH_TZ).strftime("%H:%M")
+            
             with col_start:
                 st.markdown("##### 🔑 Başlangıç Zamanı (Sınav Giriş)")
-                enc_date_start = st.date_input("Başlangıç Tarihi", default_date, key="exam_enc_date_start")
-                enc_time_start = st.text_input("Başlangıç Saati (SS:DD)", default_time, key="exam_enc_time_start", help="Örnek: 14:30")
+                enc_date_start = st.date_input("Başlangıç Tarihi", datetime.datetime.now(TURKISH_TZ).date(), key="exam_enc_date_start")
+                enc_time_start = st.text_input("Başlangıç Saati (SS:DD)", current_time, key="exam_enc_time_start", help="Örnek: 14:30")
             
+            # Bitiş Saati (Düzeltilmiş)
             with col_end:
                 st.markdown("##### 🛑 Bitiş Zamanı (Sınav Kapanış)")
                 min_date_end = enc_date_start
-                # Varsayılan Bitiş Tarihi: Başlangıç tarihi veya temizlenmiş değer
-                default_date_end = st.session_state.get('exam_enc_date_end', enc_date_start)
-                enc_date_end = st.date_input("Bitiş Tarihi", default_date_end, key="exam_enc_date_end", min_value=min_date_end)
-                # Varsayılan Bitiş Saati: Başlangıç saati veya temizlenmiş değer
-                default_time_end = st.session_state.get('exam_enc_time_end', default_time)
-                enc_time_end = st.text_input("Bitiş Saati (SS:DD)", default_time_end, key="exam_enc_time_end", help="Lütfen sınav süreniz kadar olan bitiş saatini manuel girin. Örnek: 15:30")
+                enc_date_end = st.date_input("Bitiş Tarihi", enc_date_start, key="exam_enc_date_end", min_value=min_date_end)
+                # Varsayılan Bitiş Saati, başlangıç saatiyle aynı ayarlandı.
+                enc_time_end = st.text_input("Bitiş Saati (SS:DD)", enc_time_start, key="exam_enc_time_end", help="Lütfen sınav süreniz kadar olan bitiş saatini manuel girin. Örnek: 15:30")
 
-            # Varsayılan Erişim Kodu: Temizlenmiş değer
-            default_access_code = st.session_state.get('exam_enc_access_code', "")
-            enc_access_code = st.text_input("Öğrenci Erişim Kodu (Şifre)", value=default_access_code, key="exam_enc_access_code", type="password", help="Öğrencilerin sınavı indirebilmek için gireceği kod.")
+            enc_access_code = st.text_input("Öğrenci Erişim Kodu (Şifre)", value="", key="exam_enc_access_code", type="password", help="Öğrencilerin sınavı indirebilmek için gireceği kod.")
             
             enc_question_count = st.number_input(
                 "Sınav Soru Sayısı", 
                 min_value=1, 
-                value=default_q_count, 
+                value=10, 
                 step=1,
                 key="exam_enc_question_count",
                 help="Sınavdaki toplam soru sayısını girin."
             )
             
+            # Öğretmen E-posta Adresi 
+            TEACHER_EMAIL_DEFAULT = "19enes03.kurtulus@gmail.com"
             enc_teacher_email = st.text_input(
                 "Cevapların Gönderileceği Öğretmen E-postası",
-                value=default_email,
+                value=TEACHER_EMAIL_DEFAULT,
                 key="exam_enc_teacher_email",
                 help="Öğrenci cevaplarının otomatik olarak gönderileceği e-posta adresi."
             )
@@ -446,7 +414,7 @@ def render_code_module():
             submitted = st.form_submit_button("🔒 Sınavı Kilitle ve Hazırla", type="primary", use_container_width=True)
 
         if submitted:
-            reset_all_inputs() # Sınav kitlemeye başlarken önceki tüm verileri temizle
+            reset_all_inputs() 
             
             try:
                 # Zaman formatı kontrolü...
@@ -544,15 +512,12 @@ def render_code_module():
         
         col_file, col_meta = st.columns(2)
         
-        # Öğrenci sekmesi varsayılan değerleri
-        default_access_code_student = st.session_state.get('exam_dec_access_code', "")
-        
         with col_file:
             enc_file_student = st.file_uploader("Şifreli Sınav Dosyasını Yükle (.png)", type=["png"], key="exam_dec_enc_file")
         with col_meta:
             meta_file_student = st.file_uploader("Sınav Meta Verisini Yükle (.meta)", type=["meta", "json", "txt"], key="exam_dec_meta_file")
             
-        access_code_student = st.text_input("Öğrenci Erişim Kodu", value=default_access_code_student, key="exam_dec_access_code", type="password")
+        access_code_student = st.text_input("Öğrenci Erişim Kodu", key="exam_dec_access_code", type="password")
         
         st.markdown("---")
         
@@ -697,7 +662,6 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Butonun temizleme fonksiyonunu çağırdığından emin ol
     st.button("Tüm Verileri Temizle", on_click=reset_all_inputs, use_container_width=True, help="Tüm girdileri ve sonuçları siler.")
     
     st.markdown("---")
