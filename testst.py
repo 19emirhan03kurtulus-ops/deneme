@@ -46,7 +46,7 @@ def parse_normalized_time(time_str):
 
 def init_session_state():
     """Streamlit session state'i başlatır."""
-    if 'current_view' not in st.session_state: st.session_state.current_view = 'code' # Varsayılan Görünüm 'code' olarak ayarlandı
+    if 'current_view' not in st.session_state: st.session_state.current_view = 'code' 
     
     # Sınav sistemine özgü state'ler
     if 'exam_enc_bytes' not in st.session_state: st.session_state.exam_enc_bytes = None
@@ -81,7 +81,7 @@ def derive_key(input_data, salt_bytes):
 
 # ----------------------------- SINAV SİSTEMİ YARDIMCI FONKSİYONLARI -----------------------------
 
-def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, progress_bar):
+def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, question_count, progress_bar):
     """Sınav dosyasını şifreler ve meta veriyi hazırlar (AES-GCM)."""
     try:
         progress_bar.progress(10, text="Anahtar türetiliyor...")
@@ -102,18 +102,19 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, progr
         
         progress_bar.progress(70, text="Meta veri hazırlanıyor...")
         
-        # 3. Meta Veri Oluşturma
+        # 3. Meta Veri Oluşturma (question_count eklendi)
         access_code_hash = hashlib.sha256(access_code.encode('utf-8')).hexdigest()
         
         meta_data = {
             "type": "EXAM_LOCK",
-            "version": "1.1",
+            "version": "1.2", # Versiyon güncellendi
             "start_time": normalize_time(start_time_dt),
             "end_time": normalize_time(end_time_dt),
             "access_code_hash": access_code_hash,
             "nonce_hex": nonce.hex(),
             "salt_hex": salt.hex(),
             "file_size": len(file_bytes),
+            "question_count": question_count, # Soru sayısı eklendi
         }
         
         meta_bytes = json.dumps(meta_data, indent=4).encode('utf-8')
@@ -202,6 +203,16 @@ def render_code_module():
 
             enc_access_code = st.text_input("Öğrenci Erişim Kodu (Şifre)", value="", key="exam_enc_access_code", type="password", help="Öğrencilerin sınavı indirebilmek için gireceği kod.")
             
+            # YENİ EKLENEN KISIM: Soru Sayısı Girişi
+            enc_question_count = st.number_input(
+                "Sınav Soru Sayısı", 
+                min_value=1, 
+                value=10, 
+                step=1,
+                key="exam_enc_question_count",
+                help="Sınavdaki toplam soru sayısını girin. Öğrenci ekranında görünecektir."
+            )
+            
             submitted = st.form_submit_button("🔒 Sınavı Kilitle ve Hazırla", type="primary", use_container_width=True)
 
         if submitted:
@@ -234,11 +245,13 @@ def render_code_module():
                     st.error("Bitiş zamanı şu anki zamandan ileri olmalıdır.")
                 elif end_dt <= start_dt:
                     st.error("Bitiş zamanı, başlangıç zamanından sonra olmalıdır.")
+                elif enc_question_count <= 0:
+                    st.error("Soru sayısı pozitif bir değer olmalıdır.")
                 else:
                     progress_bar = st.progress(0, text="Sınav Şifreleniyor...")
                     
                     enc_bytes, meta_bytes = encrypt_exam_file(
-                        uploaded_file.getvalue(), enc_access_code, start_dt, end_dt, progress_bar
+                        uploaded_file.getvalue(), enc_access_code, start_dt, end_dt, enc_question_count, progress_bar
                     )
                     
                     if enc_bytes and meta_bytes:
@@ -305,6 +318,7 @@ def render_code_module():
         meta_data_available = False
         meta = {}
         is_active = False
+        question_count_student = 0
         
         if meta_file_student:
             with st.container(border=True):
@@ -319,6 +333,7 @@ def render_code_module():
                         meta_data_available = True
                         start_time_str = meta.get("start_time")
                         end_time_str = meta.get("end_time")
+                        question_count_student = meta.get("question_count", "Bilinmiyor") # Soru sayısı alındı
                         
                         start_dt = parse_normalized_time(start_time_str)
                         end_dt = parse_normalized_time(end_time_str)
@@ -329,6 +344,9 @@ def render_code_module():
                         is_active = start_dt <= now_tr <= end_dt
                         
                         st.info(f"Başlangıç: **{start_dt.strftime('%d.%m.%Y %H:%M')}** | Bitiş: **{end_dt.strftime('%d.%m.%Y %H:%M')}**")
+                        
+                        # Soru Sayısı Gösterimi
+                        st.markdown(f"**Toplam Soru Sayısı:** **{question_count_student}**")
                         
                         if is_too_early:
                             time_left = start_dt - now_tr
