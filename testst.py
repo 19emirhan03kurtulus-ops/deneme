@@ -31,14 +31,13 @@ LOG_FILE = "app_log.txt"
 
 # ⚠️ UYARI: Bu kısım, e-posta gönderme işlemini yapacak olan SUNUCU (gönderici) hesabının bilgileridir.
 # Lütfen buradaki yer tutucu (placeholder) değerleri kendi gerçek SMTP bilgilerinizle değiştirin!
-# GMAIL kullanıyorsanız, SENDER_PASSWORD yerine UYGULAMA ŞİFRESİ kullanmalısınız.
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 SENDER_EMAIL = "your_sending_email@gmail.com"  # Cevapları gönderecek olan sunucunun e-postası
 SENDER_PASSWORD = "your_app_password"         # Cevapları gönderecek olan sunucunun uygulama şifresi
 
 
-# --- YARDIMCI FONKSİYONLAR (Değişmedi) ---
+# --- YARDIMCI FONKSİYONLAR ---
 
 def log(message):
     """Zaman damgası ile log dosyasına mesaj yazar."""
@@ -70,7 +69,10 @@ def init_session_state():
     if 'exam_is_meta_downloaded' not in st.session_state: st.session_state.exam_is_meta_downloaded = False
     if 'exam_decrypted_bytes' not in st.session_state: st.session_state.exam_decrypted_bytes = None
     if 'original_file_extension' not in st.session_state: st.session_state.original_file_extension = ""
-    if 'student_answers_text' not in st.session_state: st.session_state.student_answers_text = "" # Tek kutu için yeni değişken
+    # Gezinme ve Cevap Verileri
+    if 'current_question_index' not in st.session_state: st.session_state.current_question_index = 1
+    if 'student_answers' not in st.session_state: st.session_state.student_answers = {} # Cevapları tutmak için sözlük
+    
     if 'exam_ended_tr' not in st.session_state: st.session_state.exam_ended_tr = None
     if 'answers_sent' not in st.session_state: st.session_state.answers_sent = False
 
@@ -85,7 +87,8 @@ def reset_all_inputs():
     st.session_state.exam_is_meta_downloaded = False
     st.session_state.exam_decrypted_bytes = None
     st.session_state.original_file_extension = ""
-    st.session_state.student_answers_text = ""
+    st.session_state.current_question_index = 1
+    st.session_state.student_answers = {}
     st.session_state.exam_ended_tr = None
     st.session_state.answers_sent = False
     
@@ -101,7 +104,7 @@ def derive_key(input_data, salt_bytes):
     )
     return kdf.derive(input_data.encode('utf-8'))
 
-# ----------------------------- KRİPTOGRAFİ VE İŞLEM FONKSİYONLARI (Değişmedi) -----------------------------
+# ----------------------------- KRİPTOGRAFİ VE İŞLEM FONKSİYONLARI -----------------------------
 
 def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, question_count, file_name, teacher_email, progress_bar):
     """Sınav dosyasını şifreler ve meta veriyi hazırlar (AES-GCM)."""
@@ -182,10 +185,10 @@ def decrypt_exam_file(encrypted_bytes, access_code, meta, progress_bar):
             
         progress_bar.progress(100, text="Hata!")
         return None
-# ----------------------------- E-POSTA GÖNDERİM FONKSİYONU (Değişmedi) -----------------------------
+# ----------------------------- E-POSTA GÖNDERİM FONKSİYONU -----------------------------
 
-def send_email_to_teacher(teacher_email, student_info, answers_text):
-    """Cevapları öğretmenin e-posta adresine gönderir."""
+def send_email_to_teacher(teacher_email, student_info, answers_dict):
+    """Cevapları öğretmenin e-posta adresine gönderir (JSON formatında)."""
     
     if SENDER_EMAIL == "your_sending_email@gmail.com" or SENDER_PASSWORD == "your_app_password":
         log("E-posta ayarları yapılmamış. Gönderim iptal edildi.")
@@ -195,9 +198,10 @@ def send_email_to_teacher(teacher_email, student_info, answers_text):
     msg['From'] = SENDER_EMAIL
     msg['To'] = teacher_email
     msg['Subject'] = f"SINAV CEVAPLARI: {student_info}"
+    
+    answers_json = json.dumps(answers_dict, ensure_ascii=False, indent=4)
 
     # E-posta gövdesi
-    # Cevaplar, JSON yerine doğrudan gövdeye veya ayrı bir TXT dosyası olarak eklenecek.
     body = f"""
     Sayın Öğretmen,
 
@@ -206,19 +210,18 @@ def send_email_to_teacher(teacher_email, student_info, answers_text):
     Öğrenci Bilgisi: {student_info}
     Gönderim Zamanı: {datetime.datetime.now(TURKISH_TZ).strftime('%d.%m.%Y %H:%M:%S')}
     
-    --- CEVAPLAR ---
-    {answers_text}
+    Cevapları ekteki 'sinav_cevaplari.json' dosyasında bulabilirsiniz.
     """
     msg.attach(MIMEText(body, 'plain'))
 
-    # Cevapları bir TXT dosyası olarak ekle (daha temiz bir okuma için)
+    # Cevap JSON dosyasını ekle
     try:
-        attachment = MIMEApplication(answers_text.encode('utf-8'), _subtype="txt")
-        attachment.add_header('Content-Disposition', 'attachment', filename=f"{student_info.replace(' ', '_')}_cevap.txt")
+        attachment = MIMEApplication(answers_json.encode('utf-8'), _subtype="json")
+        attachment.add_header('Content-Disposition', 'attachment', filename=f"{student_info.replace(' ', '_')}_cevap.json")
         msg.attach(attachment)
     except Exception as e:
-        log(f"TXT ekleme hatası: {e}")
-        # Bu aşamada gönderimi kesmiyoruz, sadece ekleme hatasını logluyoruz.
+        log(f"JSON ekleme hatası: {e}")
+        return False, f"JSON ekleme hatası: {e}"
 
     # E-posta gönderme
     try:
@@ -237,13 +240,13 @@ def send_email_to_teacher(teacher_email, student_info, answers_text):
 # ------------------------------------------------------------------------------------------------
 
 def render_decrypted_content(dec_bytes, file_extension, question_count, teacher_email):
-    """Çözülmüş içeriği ekranda indirme yapmadan göstermeye ve tek cevap alanını eklemeye çalışır."""
+    """Çözülmüş içeriği ekranda indirme yapmadan göstermeye ve Soru bazlı cevap alanını eklemeye çalışır."""
     
-    # 1. SINAV KAĞIDI GÖRÜNTÜLEME
+    # 1. SINAV KAĞIDI GÖRÜNTÜLEME (Aynı Kaldı)
     with st.container(border=True):
         st.subheader("📝 Sınav Kağıdı (Yalnızca Görüntüleme)")
         
-        # Görüntüleme mantığı (TXT, PNG, PDF) ... (kısaltıldı)
+        # Görüntüleme mantığı (TXT, PNG, PDF) ...
         if file_extension in [".txt"]:
             try:
                 content = dec_bytes.decode('utf-8')
@@ -274,41 +277,63 @@ def render_decrypted_content(dec_bytes, file_extension, question_count, teacher_
 
     st.markdown("---")
     
-    # 2. TEK CEVAPLAMA ALANI OLUŞTURMA (Yeni Yapı)
-    st.subheader("✍️ Cevap Giriş Alanı")
-    st.info("Lütfen tüm cevaplarınızı bu tek kutuya, **her soruyu yeni bir satırda ve Soru Numarası** belirterek yazınız.")
-    st.caption(f"Örnek Format: `1. Cevabım budur.` `2. İkinci sorunun cevabı da burada.`")
-    st.caption(f"Sınav **{question_count}** soruludur. Cevaplar **{teacher_email}** adresine gönderilecektir.")
+    # 2. SORU BAZLI CEVAPLAMA ALANI (YENİ YAPI)
+    st.subheader(f"✍️ Cevap Giriş Alanı: Soru {st.session_state.current_question_index} / {question_count}")
+    st.caption(f"Lütfen **{question_count}** soruluk sınavın cevaplarını girin. Cevaplar **{teacher_email}** adresine gönderilecektir.")
     
     # Öğrenci Bilgisi Girişi
     student_id = st.text_input("Öğrenci Adı/Numarası", key="student_id_input", help="Cevaplarınızın kime ait olduğunu belirtin.")
     
-    # Varsayılan metni oluştur (Kullanıcının işini kolaylaştırmak için)
-    default_text = ""
-    for i in range(1, question_count + 1):
-        default_text += f"{i}. Cevabınızı buraya yazınız.\n"
-        
-    
-    with st.form("answer_submission_form", clear_on_submit=False):
-        
-        # Tek büyük cevap alanı
-        st.session_state.student_answers_text = st.text_area(
-            "Tüm Cevaplarınız:", 
-            value=st.session_state.student_answers_text if st.session_state.student_answers_text else default_text,
-            key="all_answers_area", 
-            height=400,
-            help="Lütfen formattaki soru numaralarını silmeden cevaplarınızı giriniz."
-        )
+    # İLERİ/GERİ Butonları için Fonksiyonlar
+    def go_next():
+        if st.session_state.current_question_index < question_count:
+            st.session_state.current_question_index += 1
 
+    def go_prev():
+        if st.session_state.current_question_index > 1:
+            st.session_state.current_question_index -= 1
+
+    with st.container(border=True):
+        
+        # Cevap Alanı
+        current_answer_key = f"answer_{st.session_state.current_question_index}"
+        
+        # Cevabı al, session_state'e kaydet ve göster
+        # Streamlit, key değiştiğinde state'i yeniler ve text_area'daki veriyi otomatik olarak ilgili key'e atar.
+        st.session_state.student_answers[current_answer_key] = st.text_area(
+            f"**Soru {st.session_state.current_question_index} Cevabı:**", 
+            value=st.session_state.student_answers.get(current_answer_key, ""),
+            key=current_answer_key, # Soru indexi ile key değiştirildiği için state güncellenir.
+            height=200,
+            label_visibility="visible"
+        )
+        
+        # Gezinme Butonları
+        col_prev, col_next, col_filler = st.columns([1, 1, 4])
+        
+        with col_prev:
+            st.button("⬅️ Geri", on_click=go_prev, disabled=st.session_state.current_question_index == 1, use_container_width=True)
+        with col_next:
+            st.button("İleri ➡️", on_click=go_next, disabled=st.session_state.current_question_index == question_count, type="secondary", use_container_width=True)
+
+    st.markdown("---")
+
+    # Cevapları Gönderme Butonu (Ayrı bir formda)
+    with st.form("answer_submission_final", clear_on_submit=False):
+        
+        # SON KONTROL MESAJI
+        st.warning(f"Cevaplarınızı göndermeden önce tüm sorulara cevap verdiğinizden emin olun (Cevaplanan: **{len(st.session_state.student_answers)}** / Toplam: **{question_count}**).")
+        
         submit_button = st.form_submit_button("Cevapları Öğretmene Gönder", type="primary", use_container_width=True, disabled=st.session_state.answers_sent)
         
         if submit_button:
             if not student_id:
-                 st.error("Lütfen cevapların kime ait olduğunu belirtmek için Adınızı/Numaranızı girin.")
-            elif st.session_state.student_answers_text.strip() == "":
-                 st.error("Lütfen cevap alanını doldurun.")
+                 st.error("Lütfen Adınızı/Numaranızı girin.")
+            elif len(st.session_state.student_answers) < question_count:
+                 st.error(f"Lütfen tüm {question_count} soruyu cevapladığınızdan emin olun.")
             else:
-                final_answers_text = st.session_state.student_answers_text
+                # Cevapları JSON formatına dönüştür
+                final_answers_dict = st.session_state.student_answers
                 
                 try:
                     meta_file_name_prefix = st.session_state.exam_dec_meta_file.name.split('_')[0]
@@ -317,8 +342,8 @@ def render_decrypted_content(dec_bytes, file_extension, question_count, teacher_
                     
                 student_info = f"Öğrenci: {student_id}, Sınav Kod: {meta_file_name_prefix}"
                 
-                # E-posta gönderme fonksiyonunu çağır (TXT metin gönderiyor)
-                success, message = send_email_to_teacher(teacher_email, student_info, final_answers_text)
+                # E-posta gönderme
+                success, message = send_email_to_teacher(teacher_email, student_info, final_answers_dict)
                 
                 if success:
                     st.success(f"✅ {message}")
@@ -558,7 +583,7 @@ def render_code_module():
         if st.button("🔓 Sınavı Görüntüle ve Başla", type="primary", use_container_width=True):
             st.session_state.exam_decrypted_bytes = None
             st.session_state.original_file_extension = original_extension
-            st.session_state.student_answers_text = "" # Cevap metnini sıfırla
+            st.session_state.current_question_index = 1 # Başlangıçta 1. soruya ayarla
             st.session_state.answers_sent = False 
             
             if not enc_file_student or not meta_file_student:
@@ -592,11 +617,8 @@ def render_code_module():
                         except:
                             q_count = 10 
                             
-                        # Cevap alanını sorulara göre hazırlar (İlk çalıştırmada varsayılan metni oluşturur)
-                        st.session_state.student_answers_text = ""
-                        for i in range(1, q_count + 1):
-                            st.session_state.student_answers_text += f"{i}. Cevabınızı buraya yazınız.\n"
-                        
+                        # Cevap sözlüğünü sadece soru sayısı kadar anahtarla başlat
+                        st.session_state.student_answers = {f"answer_{i}": "" for i in range(1, q_count + 1)}
                         st.rerun() 
                     else:
                         st.error("Çözme hatası. Lütfen dosyaları ve erişim kodunu kontrol edin.")
