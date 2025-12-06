@@ -29,12 +29,13 @@ except ImportError:
 TURKISH_TZ = pytz.timezone('Europe/Istanbul')
 LOG_FILE = "app_log.txt" 
 
-# ⚠️ GÜVENLİK UYARISI: Lütfen bu değerleri kendi e-posta sağlayıcınızın bilgileriyle değiştirin!
-# ÖRNEK (Gmail için olabilir, ancak uygulama şifresi kullanılmalıdır)
+# ⚠️ UYARI: Bu kısım, e-posta gönderme işlemini yapacak olan SUNUCU (gönderici) hesabının bilgileridir.
+# Lütfen buradaki yer tutucu (placeholder) değerleri kendi gerçek SMTP bilgilerinizle değiştirin!
+# GMAIL kullanıyorsanız, SENDER_PASSWORD yerine UYGULAMA ŞİFRESİ kullanmalısınız.
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
-SENDER_EMAIL = "your_sending_email@gmail.com"  # Cevapların gönderileceği adres (sunucu)
-SENDER_PASSWORD = "your_app_password"         # Uygulama şifresi (e-posta şifresi değil)
+SENDER_EMAIL = "your_sending_email@gmail.com"  # Cevapları gönderecek olan sunucunun e-postası
+SENDER_PASSWORD = "your_app_password"         # Cevapları gönderecek olan sunucunun uygulama şifresi
 
 
 # --- YARDIMCI FONKSİYONLAR ---
@@ -63,7 +64,6 @@ def init_session_state():
     """Streamlit session state'i başlatır."""
     if 'current_view' not in st.session_state: st.session_state.current_view = 'code' 
     
-    # Sınav sistemine özgü state'ler
     if 'exam_enc_bytes' not in st.session_state: st.session_state.exam_enc_bytes = None
     if 'exam_meta_bytes' not in st.session_state: st.session_state.exam_meta_bytes = None
     if 'exam_is_enc_downloaded' not in st.session_state: st.session_state.exam_is_enc_downloaded = False
@@ -89,7 +89,6 @@ def reset_all_inputs():
     st.session_state.exam_ended_tr = None
     st.session_state.answers_sent = False
     
-# --- KRİPTOGRAFİ VE İŞLEM FONKSİYONLARI ---
 
 def derive_key(input_data, salt_bytes):
     """PBKDF2HMAC kullanarak kriptografik anahtar türetir."""
@@ -109,31 +108,25 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, quest
     try:
         progress_bar.progress(10, text="Anahtar türetiliyor...")
         
-        # Orijinal dosya uzantısını kaydet
         _, file_extension = os.path.splitext(file_name)
-        
-        # 1. Kriptografik anahtar türetme
         time_str = normalize_time(start_time_dt) + normalize_time(end_time_dt)
         salt = os.urandom(16) 
         key_bytes = derive_key(access_code, salt)
         
-        # 2. Şifreleme (AES-GCM)
         aesgcm = AESGCM(key_bytes)
         nonce = os.urandom(12) 
         aad = time_str.encode('utf-8') 
         
         progress_bar.progress(30, text="Dosya şifreleniyor...")
-        
         encrypted_bytes = aesgcm.encrypt(nonce, file_bytes, aad)
         
         progress_bar.progress(70, text="Meta veri hazırlanıyor...")
         
-        # 3. Meta Veri Oluşturma (teacher_email eklendi)
         access_code_hash = hashlib.sha256(access_code.encode('utf-8')).hexdigest()
         
         meta_data = {
             "type": "EXAM_LOCK",
-            "version": "1.5", # Versiyon güncellendi
+            "version": "1.5", 
             "start_time": normalize_time(start_time_dt),
             "end_time": normalize_time(end_time_dt),
             "access_code_hash": access_code_hash,
@@ -142,7 +135,7 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, quest
             "file_size": len(file_bytes),
             "question_count": question_count,
             "original_extension": file_extension,
-            "teacher_email": teacher_email # Öğretmen e-postası eklendi
+            "teacher_email": teacher_email 
         }
         
         meta_bytes = json.dumps(meta_data, indent=4).encode('utf-8')
@@ -157,7 +150,6 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, quest
 
 def decrypt_exam_file(encrypted_bytes, access_code, meta, progress_bar):
     """Şifrelenmiş sınav dosyasını çözer ve bütünlük kontrolü yapar (AES-GCM)."""
-    # ... (Kriptografi kısmı değişmedi)
     try:
         progress_bar.progress(10, text="Meta veriler okunuyor...")
         
@@ -165,12 +157,9 @@ def decrypt_exam_file(encrypted_bytes, access_code, meta, progress_bar):
         end_time_str = meta.get("end_time")
         salt_bytes = bytes.fromhex(meta.get("salt_hex"))
         nonce_bytes = bytes.fromhex(meta.get("nonce_hex"))
-        
-        # AAD'yi şifreleme ile aynı şekilde yeniden oluştur
         time_str = start_time_str + end_time_str
         
         progress_bar.progress(30, text="Anahtar türetiliyor...")
-        
         key_bytes = derive_key(access_code, salt_bytes)
         
         progress_bar.progress(60, text="Dosya çözülüyor ve bütünlük kontrol ediliyor...")
@@ -200,7 +189,7 @@ def send_email_to_teacher(teacher_email, student_info, answers_json):
     
     if SENDER_EMAIL == "your_sending_email@gmail.com" or SENDER_PASSWORD == "your_app_password":
         log("E-posta ayarları yapılmamış. Gönderim iptal edildi.")
-        return False, "E-posta ayarları (SMTP sunucu ve şifre) yapılmamış."
+        return False, "E-posta ayarları (SMTP sunucu ve şifre) yapılmamış. Lütfen kodun başını kontrol edin."
 
     msg = MIMEMultipart()
     msg['From'] = SENDER_EMAIL
@@ -223,7 +212,7 @@ def send_email_to_teacher(teacher_email, student_info, answers_json):
     # Cevap JSON dosyasını ekle
     try:
         attachment = MIMEApplication(answers_json.encode('utf-8'), _subtype="json")
-        attachment.add_header('Content-Disposition', 'attachment', filename='sinav_cevaplari.json')
+        attachment.add_header('Content-Disposition', 'attachment', filename=f"{student_info.replace(' ', '_')}_cevap.json")
         msg.attach(attachment)
     except Exception as e:
         log(f"JSON ekleme hatası: {e}")
@@ -232,7 +221,7 @@ def send_email_to_teacher(teacher_email, student_info, answers_json):
     # E-posta gönderme
     try:
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls()  # Güvenliği başlat
+        server.starttls()  
         server.login(SENDER_EMAIL, SENDER_PASSWORD)
         text = msg.as_string()
         server.sendmail(SENDER_EMAIL, teacher_email, text)
@@ -252,7 +241,7 @@ def render_decrypted_content(dec_bytes, file_extension, question_count, teacher_
     with st.container(border=True):
         st.subheader("📝 Sınav Kağıdı (Yalnızca Görüntüleme)")
         
-        # Görüntüleme mantığı (TXT, PNG, PDF) ... (değişmedi)
+        # Görüntüleme mantığı (TXT, PNG, PDF) ...
         if file_extension in [".txt"]:
             try:
                 content = dec_bytes.decode('utf-8')
@@ -280,7 +269,6 @@ def render_decrypted_content(dec_bytes, file_extension, question_count, teacher_
             
         else:
             st.warning(f"**{file_extension.upper()}** uzantılı dosya tipi doğrudan tarayıcıda görüntülenemiyor.")
-            st.info("Lütfen sınav sorularını başka bir yöntemle görüntüleyin. Cevaplarınızı aşağıya girebilirsiniz.")
 
     st.markdown("---")
     
@@ -309,16 +297,14 @@ def render_decrypted_content(dec_bytes, file_extension, question_count, teacher_
             if not student_id:
                  st.error("Lütfen cevapların kime ait olduğunu belirtmek için Adınızı/Numaranızı girin.")
             else:
-                # E-posta gönderme işlemi
                 final_answers_json = json.dumps(st.session_state.student_answers, ensure_ascii=False, indent=4)
                 student_info = f"Öğrenci: {student_id}, Sınav Kod: {st.session_state.exam_dec_meta_file.name.split('_')[0]}"
                 
-                # E-posta gönderme fonksiyonunu çağır
                 success, message = send_email_to_teacher(teacher_email, student_info, final_answers_json)
                 
                 if success:
                     st.success(f"✅ {message}")
-                    st.session_state.answers_sent = True # Cevapları gönderildi olarak işaretle
+                    st.session_state.answers_sent = True 
                 else:
                     st.error(f"❌ Gönderim Hatası: {message}")
                     st.warning("E-posta gönderme ayarları doğru yapılmamış olabilir veya internet bağlantısı sorunu yaşanıyor olabilir.")
@@ -369,10 +355,11 @@ def render_code_module():
                 help="Sınavdaki toplam soru sayısını girin."
             )
             
-            # YENİ: Öğretmen E-posta Adresi
+            # Öğretmen E-posta Adresi, varsayılan olarak sizin belirttiğiniz mail ile dolduruldu.
+            TEACHER_EMAIL_DEFAULT = "19enes03.kurtulus@gmail.com"
             enc_teacher_email = st.text_input(
                 "Cevapların Gönderileceği Öğretmen E-postası",
-                value="",
+                value=TEACHER_EMAIL_DEFAULT,
                 key="exam_enc_teacher_email",
                 help="Öğrenci cevaplarının otomatik olarak gönderileceği e-posta adresi."
             )
@@ -380,11 +367,10 @@ def render_code_module():
             submitted = st.form_submit_button("🔒 Sınavı Kilitle ve Hazırla", type="primary", use_container_width=True)
 
         if submitted:
-            # Önceki state'leri temizle
             reset_all_inputs() 
             
             try:
-                # Zaman formatı kontrolü... (değişmedi)
+                # Zaman formatı kontrolü...
                 time_format_valid = True
                 start_dt_naive, end_dt_naive = None, None
                 try:
@@ -472,7 +458,7 @@ def render_code_module():
         if st.session_state.exam_ended_tr:
             st.error(f"🛑 SINAV SÜRESİ DOLDU! 🛑")
             st.warning(f"Sınav **{st.session_state.exam_ended_tr}** itibarıyla sona ermiştir. Görüntüleme ve cevaplama ekranı kapatılmıştır. Öğretmeninizle iletişime geçin.")
-            return # Fonksiyonu burada sonlandır
+            return
             
         
         st.subheader("1. Sınav Dosyalarını Yükle")
@@ -512,7 +498,7 @@ def render_code_module():
                         end_time_str = meta.get("end_time")
                         question_count_student = meta.get("question_count", "Bilinmiyor") 
                         original_extension = meta.get("original_extension", "") 
-                        teacher_email_student = meta.get("teacher_email", "BILINMIYOR") # Öğretmen e-postası alındı
+                        teacher_email_student = meta.get("teacher_email", "BILINMIYOR") 
                         
                         start_dt = parse_normalized_time(start_time_str)
                         end_dt = parse_normalized_time(end_time_str) 
@@ -551,7 +537,7 @@ def render_code_module():
             st.session_state.exam_decrypted_bytes = None
             st.session_state.original_file_extension = original_extension
             st.session_state.student_answers = {} 
-            st.session_state.answers_sent = False # Cevap gönderme durumunu sıfırla
+            st.session_state.answers_sent = False 
             
             if not enc_file_student or not meta_file_student:
                 st.error("Lütfen hem şifreli sınav dosyasını hem de meta veriyi yükleyin.")
