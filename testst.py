@@ -6,7 +6,13 @@ import os
 import hashlib
 import io
 import base64
-import time # Kapatma mekanizması için eklendi
+import time 
+
+# E-posta göndermek için gerekli kütüphane
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 
 # Gerekli Kriptografi Kütüphanesi
 try:
@@ -22,6 +28,14 @@ except ImportError:
 # --- SABİTLER ve İLK AYARLAR ---
 TURKISH_TZ = pytz.timezone('Europe/Istanbul')
 LOG_FILE = "app_log.txt" 
+
+# ⚠️ GÜVENLİK UYARISI: Lütfen bu değerleri kendi e-posta sağlayıcınızın bilgileriyle değiştirin!
+# ÖRNEK (Gmail için olabilir, ancak uygulama şifresi kullanılmalıdır)
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+SENDER_EMAIL = "your_sending_email@gmail.com"  # Cevapların gönderileceği adres (sunucu)
+SENDER_PASSWORD = "your_app_password"         # Uygulama şifresi (e-posta şifresi değil)
+
 
 # --- YARDIMCI FONKSİYONLAR ---
 
@@ -56,10 +70,9 @@ def init_session_state():
     if 'exam_is_meta_downloaded' not in st.session_state: st.session_state.exam_is_meta_downloaded = False
     if 'exam_decrypted_bytes' not in st.session_state: st.session_state.exam_decrypted_bytes = None
     if 'original_file_extension' not in st.session_state: st.session_state.original_file_extension = ""
-    # Yeni eklendi: Cevapları tutmak için
     if 'student_answers' not in st.session_state: st.session_state.student_answers = {}
-    # Yeni eklendi: Sınavın bittiği zamanı tutmak için (kapanış trigger'ı)
     if 'exam_ended_tr' not in st.session_state: st.session_state.exam_ended_tr = None
+    if 'answers_sent' not in st.session_state: st.session_state.answers_sent = False
 
 
 def reset_all_inputs():
@@ -74,6 +87,7 @@ def reset_all_inputs():
     st.session_state.original_file_extension = ""
     st.session_state.student_answers = {}
     st.session_state.exam_ended_tr = None
+    st.session_state.answers_sent = False
     
 # --- KRİPTOGRAFİ VE İŞLEM FONKSİYONLARI ---
 
@@ -90,7 +104,7 @@ def derive_key(input_data, salt_bytes):
 
 # ----------------------------- SINAV SİSTEMİ YARDIMCI FONKSİYONLARI -----------------------------
 
-def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, question_count, file_name, progress_bar):
+def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, question_count, file_name, teacher_email, progress_bar):
     """Sınav dosyasını şifreler ve meta veriyi hazırlar (AES-GCM)."""
     try:
         progress_bar.progress(10, text="Anahtar türetiliyor...")
@@ -114,12 +128,12 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, quest
         
         progress_bar.progress(70, text="Meta veri hazırlanıyor...")
         
-        # 3. Meta Veri Oluşturma 
+        # 3. Meta Veri Oluşturma (teacher_email eklendi)
         access_code_hash = hashlib.sha256(access_code.encode('utf-8')).hexdigest()
         
         meta_data = {
             "type": "EXAM_LOCK",
-            "version": "1.4", # Versiyon güncellendi
+            "version": "1.5", # Versiyon güncellendi
             "start_time": normalize_time(start_time_dt),
             "end_time": normalize_time(end_time_dt),
             "access_code_hash": access_code_hash,
@@ -127,7 +141,8 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, quest
             "salt_hex": salt.hex(),
             "file_size": len(file_bytes),
             "question_count": question_count,
-            "original_extension": file_extension 
+            "original_extension": file_extension,
+            "teacher_email": teacher_email # Öğretmen e-postası eklendi
         }
         
         meta_bytes = json.dumps(meta_data, indent=4).encode('utf-8')
@@ -142,6 +157,7 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, quest
 
 def decrypt_exam_file(encrypted_bytes, access_code, meta, progress_bar):
     """Şifrelenmiş sınav dosyasını çözer ve bütünlük kontrolü yapar (AES-GCM)."""
+    # ... (Kriptografi kısmı değişmedi)
     try:
         progress_bar.progress(10, text="Meta veriler okunuyor...")
         
@@ -177,16 +193,66 @@ def decrypt_exam_file(encrypted_bytes, access_code, meta, progress_bar):
             
         progress_bar.progress(100, text="Hata!")
         return None
+# ----------------------------- E-POSTA GÖNDERİM FONKSİYONU -----------------------------
+
+def send_email_to_teacher(teacher_email, student_info, answers_json):
+    """Cevapları öğretmenin e-posta adresine gönderir."""
+    
+    if SENDER_EMAIL == "your_sending_email@gmail.com" or SENDER_PASSWORD == "your_app_password":
+        log("E-posta ayarları yapılmamış. Gönderim iptal edildi.")
+        return False, "E-posta ayarları (SMTP sunucu ve şifre) yapılmamış."
+
+    msg = MIMEMultipart()
+    msg['From'] = SENDER_EMAIL
+    msg['To'] = teacher_email
+    msg['Subject'] = f"SINAV CEVAPLARI: {student_info}"
+
+    # E-posta gövdesi
+    body = f"""
+    Sayın Öğretmen,
+
+    Aşağıda belirtilen öğrencinin sınav cevapları bulunmaktadır.
+    
+    Öğrenci Bilgisi: {student_info}
+    Gönderim Zamanı: {datetime.datetime.now(TURKISH_TZ).strftime('%d.%m.%Y %H:%M:%S')}
+    
+    Cevapları ekteki 'sinav_cevaplari.json' dosyasında bulabilirsiniz.
+    """
+    msg.attach(MIMEText(body, 'plain'))
+
+    # Cevap JSON dosyasını ekle
+    try:
+        attachment = MIMEApplication(answers_json.encode('utf-8'), _subtype="json")
+        attachment.add_header('Content-Disposition', 'attachment', filename='sinav_cevaplari.json')
+        msg.attach(attachment)
+    except Exception as e:
+        log(f"JSON ekleme hatası: {e}")
+        return False, f"JSON ekleme hatası: {e}"
+
+    # E-posta gönderme
+    try:
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()  # Güvenliği başlat
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        text = msg.as_string()
+        server.sendmail(SENDER_EMAIL, teacher_email, text)
+        server.quit()
+        log(f"Cevaplar başarıyla {teacher_email} adresine gönderildi.")
+        return True, "Cevaplar başarıyla öğretmeninize iletildi."
+    except Exception as e:
+        log(f"E-posta gönderme hatası: {e}")
+        return False, f"E-posta gönderme hatası: {e}"
 
 # ------------------------------------------------------------------------------------------------
 
-def render_decrypted_content(dec_bytes, file_extension, question_count):
+def render_decrypted_content(dec_bytes, file_extension, question_count, teacher_email):
     """Çözülmüş içeriği ekranda indirme yapmadan göstermeye ve cevap alanını eklemeye çalışır."""
     
     # 1. SINAV KAĞIDI GÖRÜNTÜLEME
     with st.container(border=True):
         st.subheader("📝 Sınav Kağıdı (Yalnızca Görüntüleme)")
         
+        # Görüntüleme mantığı (TXT, PNG, PDF) ... (değişmedi)
         if file_extension in [".txt"]:
             try:
                 content = dec_bytes.decode('utf-8')
@@ -204,7 +270,6 @@ def render_decrypted_content(dec_bytes, file_extension, question_count):
                 st.error("Görüntü dosyası görüntülenirken bir hata oluştu.")
                 
         elif file_extension in [".pdf"]:
-            # PDF'yi indirme yapmadan göstermek için iframe denemesi
             try:
                 base64_pdf = base64.b64encode(dec_bytes).decode('utf-8')
                 pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="700" type="application/pdf"></iframe>'
@@ -221,15 +286,16 @@ def render_decrypted_content(dec_bytes, file_extension, question_count):
     
     # 2. CEVAPLAMA ALANI OLUŞTURMA
     st.subheader("✍️ Cevap Giriş Alanı")
-    st.caption(f"Lütfen **{question_count}** soruluk sınavın cevaplarını aşağıdaki kutulara girin.")
+    st.caption(f"Lütfen **{question_count}** soruluk sınavın cevaplarını aşağıdaki kutulara girin. Cevaplar **{teacher_email}** adresine gönderilecektir.")
+    
+    # Öğrenci Bilgisi Girişi
+    student_id = st.text_input("Öğrenci Adı/Numarası", key="student_id_input", help="Cevaplarınızın kime ait olduğunu belirtin.")
     
     with st.form("answer_submission_form", clear_on_submit=False):
         for i in range(1, question_count + 1):
-            # Cevapları session state'te tutuyoruz
             key = f"answer_{i}"
             st.session_state.student_answers.setdefault(key, "") 
             
-            # Text area'nın değeri session state'ten alınıyor ve on_change ile güncelleniyor
             st.session_state.student_answers[key] = st.text_area(
                 f"**Soru {i} Cevabı:**", 
                 value=st.session_state.student_answers.get(key, ""),
@@ -237,25 +303,25 @@ def render_decrypted_content(dec_bytes, file_extension, question_count):
                 height=100
             )
 
-        submit_button = st.form_submit_button("Cevapları Kaydet/Gönder", type="primary", use_container_width=True)
+        submit_button = st.form_submit_button("Cevapları Öğretmene Gönder", type="primary", use_container_width=True, disabled=st.session_state.answers_sent)
         
         if submit_button:
-            # Cevapların JSON olarak öğretmen ile paylaşılmaya hazır olduğunu varsayalım.
-            final_answers_json = json.dumps(st.session_state.student_answers, ensure_ascii=False, indent=4)
-            
-            st.success("Cevaplar başarıyla kaydedildi!")
-            
-            # Öğrencinin cevapları indirmesine izin veren (veya kopyalamasını sağlayan) bir alan.
-            # Öğrenci cevaplarını öğretmene nasıl ileteceği konusunda talimat verilmelidir.
-            
-            st.download_button(
-                label="Cevap Dosyasını İndir (.json)",
-                data=final_answers_json.encode('utf-8'),
-                file_name="sinav_cevaplari.json",
-                mime="application/json",
-                help="Bu dosyayı indirip öğretmeninizle paylaşın."
-            )
-            st.info("Lütfen cevap dosyanızı indirip öğretmeninizle paylaşmayı unutmayın.")
+            if not student_id:
+                 st.error("Lütfen cevapların kime ait olduğunu belirtmek için Adınızı/Numaranızı girin.")
+            else:
+                # E-posta gönderme işlemi
+                final_answers_json = json.dumps(st.session_state.student_answers, ensure_ascii=False, indent=4)
+                student_info = f"Öğrenci: {student_id}, Sınav Kod: {st.session_state.exam_dec_meta_file.name.split('_')[0]}"
+                
+                # E-posta gönderme fonksiyonunu çağır
+                success, message = send_email_to_teacher(teacher_email, student_info, final_answers_json)
+                
+                if success:
+                    st.success(f"✅ {message}")
+                    st.session_state.answers_sent = True # Cevapları gönderildi olarak işaretle
+                else:
+                    st.error(f"❌ Gönderim Hatası: {message}")
+                    st.warning("E-posta gönderme ayarları doğru yapılmamış olabilir veya internet bağlantısı sorunu yaşanıyor olabilir.")
 
 
 def render_code_module():
@@ -300,21 +366,25 @@ def render_code_module():
                 value=10, 
                 step=1,
                 key="exam_enc_question_count",
-                help="Sınavdaki toplam soru sayısını girin. Öğrenci ekranında görünecektir."
+                help="Sınavdaki toplam soru sayısını girin."
+            )
+            
+            # YENİ: Öğretmen E-posta Adresi
+            enc_teacher_email = st.text_input(
+                "Cevapların Gönderileceği Öğretmen E-postası",
+                value="",
+                key="exam_enc_teacher_email",
+                help="Öğrenci cevaplarının otomatik olarak gönderileceği e-posta adresi."
             )
             
             submitted = st.form_submit_button("🔒 Sınavı Kilitle ve Hazırla", type="primary", use_container_width=True)
 
         if submitted:
             # Önceki state'leri temizle
-            st.session_state.exam_is_enc_downloaded = False
-            st.session_state.exam_is_meta_downloaded = False
-            st.session_state.exam_decrypted_bytes = None
-            st.session_state.original_file_extension = ""
-            st.session_state.student_answers = {}
-            st.session_state.exam_ended_tr = None
+            reset_all_inputs() 
             
             try:
+                # Zaman formatı kontrolü... (değişmedi)
                 time_format_valid = True
                 start_dt_naive, end_dt_naive = None, None
                 try:
@@ -335,6 +405,8 @@ def render_code_module():
                     st.error("Lütfen önce bir sınav dosyası yükleyin.")
                 elif not enc_access_code:
                     st.error("Lütfen bir erişim kodu belirleyin.")
+                elif not enc_teacher_email or "@" not in enc_teacher_email:
+                    st.error("Lütfen cevapların gönderileceği geçerli bir e-posta adresi girin.")
                 elif end_dt <= now_tr:
                     st.error("Bitiş zamanı şu anki zamandan ileri olmalıdır.")
                 elif end_dt <= start_dt:
@@ -345,7 +417,7 @@ def render_code_module():
                     progress_bar = st.progress(0, text="Sınav Şifreleniyor...")
                     
                     enc_bytes, meta_bytes = encrypt_exam_file(
-                        uploaded_file.getvalue(), enc_access_code, start_dt, end_dt, enc_question_count, uploaded_file.name, progress_bar
+                        uploaded_file.getvalue(), enc_access_code, start_dt, end_dt, enc_question_count, uploaded_file.name, enc_teacher_email, progress_bar
                     )
                     
                     if enc_bytes and meta_bytes:
@@ -399,7 +471,7 @@ def render_code_module():
         # Sınav bitmişse, tüm akışı durdur
         if st.session_state.exam_ended_tr:
             st.error(f"🛑 SINAV SÜRESİ DOLDU! 🛑")
-            st.warning(f"Sınav **{st.session_state.exam_ended_tr}** itibarıyla sona ermiştir. Görüntüleme ve cevaplama ekranı kapatılmıştır. Lütfen cevap dosyanızı (indirdiyseniz) öğretmeninize iletin.")
+            st.warning(f"Sınav **{st.session_state.exam_ended_tr}** itibarıyla sona ermiştir. Görüntüleme ve cevaplama ekranı kapatılmıştır. Öğretmeninizle iletişime geçin.")
             return # Fonksiyonu burada sonlandır
             
         
@@ -422,6 +494,7 @@ def render_code_module():
         is_active = False
         question_count_student = 0
         original_extension = ""
+        teacher_email_student = ""
         end_dt = None
         
         if meta_file_student:
@@ -439,9 +512,10 @@ def render_code_module():
                         end_time_str = meta.get("end_time")
                         question_count_student = meta.get("question_count", "Bilinmiyor") 
                         original_extension = meta.get("original_extension", "") 
+                        teacher_email_student = meta.get("teacher_email", "BILINMIYOR") # Öğretmen e-postası alındı
                         
                         start_dt = parse_normalized_time(start_time_str)
-                        end_dt = parse_normalized_time(end_time_str) # Global olarak kullanmak için
+                        end_dt = parse_normalized_time(end_time_str) 
                         now_tr = datetime.datetime.now(TURKISH_TZ).replace(second=0, microsecond=0)
                         
                         is_too_early = now_tr < start_dt
@@ -460,7 +534,6 @@ def render_code_module():
                             time_left = start_dt - now_tr
                             st.warning(f"🔓 Sınav Henüz Başlamadı! Kalan süre: **{time_left.days} gün {time_left.seconds//3600} saat {(time_left.seconds%3600)//60} dakika**")
                         elif is_too_late:
-                            # Sınav bittiyse ve henüz session state'e kaydedilmediyse kaydet ve uygulamayı yeniden çalıştır
                             if st.session_state.exam_ended_tr is None:
                                 st.session_state.exam_ended_tr = end_dt.strftime('%d.%m.%Y %H:%M')
                                 st.rerun() 
@@ -477,7 +550,8 @@ def render_code_module():
         if st.button("🔓 Sınavı Görüntüle ve Başla", type="primary", use_container_width=True):
             st.session_state.exam_decrypted_bytes = None
             st.session_state.original_file_extension = original_extension
-            st.session_state.student_answers = {} # Cevapları sıfırla
+            st.session_state.student_answers = {} 
+            st.session_state.answers_sent = False # Cevap gönderme durumunu sıfırla
             
             if not enc_file_student or not meta_file_student:
                 st.error("Lütfen hem şifreli sınav dosyasını hem de meta veriyi yükleyin.")
@@ -504,15 +578,14 @@ def render_code_module():
                         st.success("Sınav Dosyası Başarıyla Çözüldü!")
                         st.session_state.exam_decrypted_bytes = dec_bytes
                         st.session_state.original_file_extension = original_extension 
-                        # Soru sayısını int'e çevir ve cevap kutularını başlat
+                        
                         try:
                             q_count = int(question_count_student)
                         except:
-                            q_count = 10 # Hata durumunda varsayılan
+                            q_count = 10 
                             
-                        # Cevaplar için boş dict oluştur
                         st.session_state.student_answers = {f"answer_{i}": "" for i in range(1, q_count + 1)}
-                        st.rerun() # Görüntüleme alanını hemen göstermek için yeniden çalıştır
+                        st.rerun() 
                     else:
                         st.error("Çözme hatası. Lütfen dosyaları ve erişim kodunu kontrol edin.")
         
@@ -522,12 +595,10 @@ def render_code_module():
             # Sınavın bitip bitmediğini kontrol et (anlık kontrol)
             now_tr = datetime.datetime.now(TURKISH_TZ).replace(second=0, microsecond=0)
             if end_dt and now_tr > end_dt:
-                # Sınav bitti. Kapanış trigger'ını ayarla ve yeniden çalıştır
                 if st.session_state.exam_ended_tr is None:
                     st.session_state.exam_ended_tr = end_dt.strftime('%d.%m.%Y %H:%M')
                     st.rerun() 
             
-            # Eğer hala aktifse render et
             if st.session_state.exam_ended_tr is None:
                 try:
                     q_count = int(question_count_student)
@@ -537,7 +608,8 @@ def render_code_module():
                 render_decrypted_content(
                     st.session_state.exam_decrypted_bytes, 
                     st.session_state.original_file_extension,
-                    q_count
+                    q_count,
+                    teacher_email_student
                 )
             
             
@@ -547,7 +619,7 @@ init_session_state()
 
 st.set_page_config(page_title="Zaman Ayarlı Sınav Kilit Uygulaması", layout="wide", initial_sidebar_state="expanded")
 st.title("👨‍🏫 Zaman Ayarlı Sınav Kilit Sistemi")
-st.caption("AES-GCM ve Streamlit ile zaman kilitli sınav şifreleme modülü. Sınav kağıdı indirme engellenmiştir.")
+st.caption("AES-GCM ve Streamlit ile zaman kilitli sınav şifreleme modülü.")
 
 # Kenar çubuğu (Sidebar)
 with st.sidebar:
@@ -562,6 +634,7 @@ with st.sidebar:
     st.markdown("##### 🇹🇷 Türk Saat Dilimi (UTC+03)")
     now_tr = datetime.datetime.now(TURKISH_TZ).strftime("%d.%m.%Y %H:%M:%S")
     st.write(f"Şu anki zaman: **{now_tr}**")
+
 
 # Ana İçerik
 render_code_module()
