@@ -5,9 +5,9 @@ import json
 import os
 import hashlib
 import io
+import base64 # Basit dosya gösterimi için eklendi
 
 # Gerekli Kriptografi Kütüphanesi
-# Eğer "ModuleNotFoundError" hatası alırsanız, terminalde: pip install cryptography pytz
 try:
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     from cryptography.hazmat.primitives import hashes
@@ -54,6 +54,7 @@ def init_session_state():
     if 'exam_is_enc_downloaded' not in st.session_state: st.session_state.exam_is_enc_downloaded = False
     if 'exam_is_meta_downloaded' not in st.session_state: st.session_state.exam_is_meta_downloaded = False
     if 'exam_decrypted_bytes' not in st.session_state: st.session_state.exam_decrypted_bytes = None
+    if 'original_file_extension' not in st.session_state: st.session_state.original_file_extension = ""
 
 
 def reset_all_inputs():
@@ -65,6 +66,7 @@ def reset_all_inputs():
     st.session_state.exam_is_enc_downloaded = False
     st.session_state.exam_is_meta_downloaded = False
     st.session_state.exam_decrypted_bytes = None
+    st.session_state.original_file_extension = ""
     
 # --- KRİPTOGRAFİ VE İŞLEM FONKSİYONLARI ---
 
@@ -81,10 +83,13 @@ def derive_key(input_data, salt_bytes):
 
 # ----------------------------- SINAV SİSTEMİ YARDIMCI FONKSİYONLARI -----------------------------
 
-def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, question_count, progress_bar):
+def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, question_count, file_name, progress_bar):
     """Sınav dosyasını şifreler ve meta veriyi hazırlar (AES-GCM)."""
     try:
         progress_bar.progress(10, text="Anahtar türetiliyor...")
+        
+        # Orijinal dosya uzantısını kaydet
+        _, file_extension = os.path.splitext(file_name)
         
         # 1. Kriptografik anahtar türetme
         time_str = normalize_time(start_time_dt) + normalize_time(end_time_dt)
@@ -102,19 +107,20 @@ def encrypt_exam_file(file_bytes, access_code, start_time_dt, end_time_dt, quest
         
         progress_bar.progress(70, text="Meta veri hazırlanıyor...")
         
-        # 3. Meta Veri Oluşturma (question_count eklendi)
+        # 3. Meta Veri Oluşturma (question_count ve file_extension eklendi)
         access_code_hash = hashlib.sha256(access_code.encode('utf-8')).hexdigest()
         
         meta_data = {
             "type": "EXAM_LOCK",
-            "version": "1.2", # Versiyon güncellendi
+            "version": "1.3", # Versiyon güncellendi
             "start_time": normalize_time(start_time_dt),
             "end_time": normalize_time(end_time_dt),
             "access_code_hash": access_code_hash,
             "nonce_hex": nonce.hex(),
             "salt_hex": salt.hex(),
             "file_size": len(file_bytes),
-            "question_count": question_count, # Soru sayısı eklendi
+            "question_count": question_count,
+            "original_extension": file_extension # Orijinal uzantı eklendi
         }
         
         meta_bytes = json.dumps(meta_data, indent=4).encode('utf-8')
@@ -167,6 +173,47 @@ def decrypt_exam_file(encrypted_bytes, access_code, meta, progress_bar):
 
 # ------------------------------------------------------------------------------------------------
 
+def render_decrypted_content(dec_bytes, file_extension):
+    """Çözülmüş içeriği ekranda indirme yapmadan göstermeye çalışır."""
+    st.markdown("---")
+    st.subheader("2. Çözülmüş Sınav İçeriği (Yalnızca Görüntüleme)")
+    
+    if file_extension in [".txt"]:
+        try:
+            content = dec_bytes.decode('utf-8')
+            st.text_area("Sınav Metni", content, height=500, disabled=True)
+            st.success("Metin dosyası başarıyla görüntülendi.")
+        except Exception:
+            st.error("Metin içeriği görüntülenirken bir hata oluştu.")
+            
+    elif file_extension in [".png", ".jpg", ".jpeg"]:
+        try:
+            image_stream = io.BytesIO(dec_bytes)
+            st.image(image_stream, caption="Çözülmüş Görüntü Dosyası", use_container_width=True)
+            st.success("Görüntü dosyası başarıyla görüntülendi.")
+        except Exception:
+            st.error("Görüntü dosyası görüntülenirken bir hata oluştu.")
+            
+    elif file_extension in [".pdf"]:
+        # PDF'yi indirme yapmadan göstermek için embed/iframe kullanmak gerekir
+        # Streamlit'te bu, indirilebilir bir nesne oluşturmadan zordur ve tarayıcıya güvenmek gerekir.
+        # Basit bir iframe denemesi (Garantili Çalışmaz ve tarayıcı kaydetmeyi engellemez):
+        try:
+            base64_pdf = base64.b64encode(dec_bytes).decode('utf-8')
+            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="700" type="application/pdf"></iframe>'
+            st.markdown(pdf_display, unsafe_allow_html=True)
+            st.warning("PDF gösterimi tarayıcı ayarlarınıza bağlıdır ve indirmeyi tamamen engellemez.")
+        except Exception:
+            st.error("PDF gösterilirken bir hata oluştu.")
+        
+    else:
+        st.warning(f"**{file_extension}** uzantılı dosya tipi doğrudan tarayıcıda görüntülenemiyor. Sınavı tamamlamak için kağıt/ekran üzerinde çözmelisiniz.")
+        st.info("Bu sistemde, indirme butonu sınav kağıdının dağıtılmaması için kasıtlı olarak kaldırılmıştır.")
+    
+    st.markdown("---")
+    st.markdown("Sınavınız burada görüntülenmektedir. Lütfen cevaplarınızı ayrı bir kağıda yazın.")
+
+
 def render_code_module():
     """Zaman ayarlı sınav kilit modülünü render eder."""
     
@@ -203,7 +250,6 @@ def render_code_module():
 
             enc_access_code = st.text_input("Öğrenci Erişim Kodu (Şifre)", value="", key="exam_enc_access_code", type="password", help="Öğrencilerin sınavı indirebilmek için gireceği kod.")
             
-            # YENİ EKLENEN KISIM: Soru Sayısı Girişi
             enc_question_count = st.number_input(
                 "Sınav Soru Sayısı", 
                 min_value=1, 
@@ -219,6 +265,7 @@ def render_code_module():
             st.session_state.exam_is_enc_downloaded = False
             st.session_state.exam_is_meta_downloaded = False
             st.session_state.exam_decrypted_bytes = None
+            st.session_state.original_file_extension = ""
             
             try:
                 time_format_valid = True
@@ -251,7 +298,7 @@ def render_code_module():
                     progress_bar = st.progress(0, text="Sınav Şifreleniyor...")
                     
                     enc_bytes, meta_bytes = encrypt_exam_file(
-                        uploaded_file.getvalue(), enc_access_code, start_dt, end_dt, enc_question_count, progress_bar
+                        uploaded_file.getvalue(), enc_access_code, start_dt, end_dt, enc_question_count, uploaded_file.name, progress_bar
                     )
                     
                     if enc_bytes and meta_bytes:
@@ -319,6 +366,7 @@ def render_code_module():
         meta = {}
         is_active = False
         question_count_student = 0
+        original_extension = ""
         
         if meta_file_student:
             with st.container(border=True):
@@ -333,7 +381,8 @@ def render_code_module():
                         meta_data_available = True
                         start_time_str = meta.get("start_time")
                         end_time_str = meta.get("end_time")
-                        question_count_student = meta.get("question_count", "Bilinmiyor") # Soru sayısı alındı
+                        question_count_student = meta.get("question_count", "Bilinmiyor") 
+                        original_extension = meta.get("original_extension", "") # Uzantı alındı
                         
                         start_dt = parse_normalized_time(start_time_str)
                         end_dt = parse_normalized_time(end_time_str)
@@ -345,8 +394,11 @@ def render_code_module():
                         
                         st.info(f"Başlangıç: **{start_dt.strftime('%d.%m.%Y %H:%M')}** | Bitiş: **{end_dt.strftime('%d.%m.%Y %H:%M')}**")
                         
-                        # Soru Sayısı Gösterimi
-                        st.markdown(f"**Toplam Soru Sayısı:** **{question_count_student}**")
+                        col_qc, col_ext = st.columns(2)
+                        with col_qc:
+                            st.markdown(f"**Toplam Soru Sayısı:** **{question_count_student}**")
+                        with col_ext:
+                            st.markdown(f"**Dosya Tipi:** **{original_extension.upper() if original_extension else 'Bilinmiyor'}**")
                         
                         if is_too_early:
                             time_left = start_dt - now_tr
@@ -362,8 +414,9 @@ def render_code_module():
                     st.error(f"Meta dosya okuma hatası veya geçersiz format: {e}")
 
 
-        if st.button("🔓 Sınavı İndir ve Başla", type="primary", use_container_width=True):
+        if st.button("🔓 Sınavı Görüntüle ve Başla", type="primary", use_container_width=True):
             st.session_state.exam_decrypted_bytes = None
+            st.session_state.original_file_extension = original_extension
             
             if not enc_file_student or not meta_file_student:
                 st.error("Lütfen hem şifreli sınav dosyasını hem de meta veriyi yükleyin.")
@@ -389,32 +442,13 @@ def render_code_module():
                     if dec_bytes:
                         st.success("Sınav Dosyası Başarıyla Çözüldü!")
                         st.session_state.exam_decrypted_bytes = dec_bytes
+                        st.session_state.original_file_extension = original_extension # Uzantıyı session state'e kaydet
                     else:
                         st.error("Çözme hatası. Lütfen dosyaları ve erişim kodunu kontrol edin.")
         
-        # --- İndirme Bölümü (Öğrenci) ---
+        # --- GÖRÜNTÜLEME BÖLÜMÜ (Öğrenci) ---
         if st.session_state.exam_decrypted_bytes:
-            st.markdown("---")
-            st.subheader("2. Çözülmüş Dosyayı İndir")
-            
-            # Orijinal dosya uzantısını yeniden oluşturmak için tahmin yapılır
-            original_file_name = enc_file_student.name.replace("_encrypted.png", "") if enc_file_student else "decrypted_exam"
-            file_extension = ""
-            
-            if any(ext in original_file_name.lower() for ext in [".pdf", ".docx", ".txt", ".zip", ".jpg", ".png"]):
-                file_extension = os.path.splitext(original_file_name)[1]
-            else:
-                pass 
-
-            st.download_button(
-                label="📥 Çözülmüş Sınavı İndir",
-                data=st.session_state.exam_decrypted_bytes,
-                file_name=f"decrypted_exam{file_extension}",
-                mime="application/octet-stream",
-                use_container_width=True
-            )
-            
-            st.success("Sınav dosyasını indirdikten sonra, cevaplarınızı öğretmeninizle paylaşmayı unutmayın!")
+             render_decrypted_content(st.session_state.exam_decrypted_bytes, st.session_state.original_file_extension)
             
             
 # --- ANA AKIŞ ---
@@ -423,7 +457,7 @@ init_session_state()
 
 st.set_page_config(page_title="Zaman Ayarlı Sınav Kilit Uygulaması", layout="wide", initial_sidebar_state="expanded")
 st.title("👨‍🏫 Zaman Ayarlı Sınav Kilit Sistemi")
-st.caption("AES-GCM ve Streamlit ile zaman kilitli sınav şifreleme modülü.")
+st.caption("AES-GCM ve Streamlit ile zaman kilitli sınav şifreleme modülü. Sınav kağıdı indirme engellenmiştir.")
 
 # Kenar çubuğu (Sidebar)
 with st.sidebar:
